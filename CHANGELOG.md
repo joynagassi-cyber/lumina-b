@@ -56,3 +56,23 @@ Empreinte du certificat de signature (SHA-256) :
 ```
 9A:71:27:AD:2D:C1:CD:E3:64:E2:77:78:46:E4:7C:20:CB:E8:62:3A:35:E7:1C:D3:89:D3:79:4D:91:13:D6:56
 ```
+
+### Publication effective — 2026-11-04
+
+Première release publiée avec ses binaires signés :
+
+| Fichier | Taille |
+|---|---|
+| `app-release.apk` | 15,4 Mo |
+| `app-release.aab` | 15,0 Mo |
+
+- empreinte SHA-256 de l'APK au moment du build : `30982b84…f0e41593`
+- certificat de signature vérifié par `apksigner verify --print-certs` :
+  `CN=Lumina-beta, OU=Mobile, O=Lumina, L=Kandi, ST=Alibori, C=BJ`,
+  SHA-256 `9A:71:27:AD:…:13:D6:56`
+- run de publication : https://github.com/joynagassi-cyber/lumina-b/actions/runs/41809739025
+
+Deux défauts bloquants ont été corrigés pour y parvenir : `java.util.Properties()`
+ne se compile pas dans un script Gradle Kotlin DSL (`java` y désigne l'extension
+`java { }`, d'où `import java.util.Properties`), et `run_step` neutralisait
+`set -e` en appelant les phases dans une liste `||` (l'échec Gradle était avalé).
