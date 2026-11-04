@@ -376,7 +376,7 @@ fun SettingsScreen(
 
             ListRow(
                 title = "Centre d'Exports (PDF & Excel)",
-                subtitle = "Bilans officiels et relevés complets certifiés",
+                subtitle = "Rapports de gestion mensuels et relevés complets",
                 icon = Icons.Default.Description,
                 onClick = onNavigateToExport,
                 trailingContent = {

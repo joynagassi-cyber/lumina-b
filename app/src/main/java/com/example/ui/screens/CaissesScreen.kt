@@ -254,6 +254,55 @@ fun CaissesScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
 
+        // Alerte : deux caisses aux noms très proches (risque de doublon)
+        val similarNames = remember(uiState.cashRegisterSummaries) {
+            val list = uiState.cashRegisterSummaries
+            val found = mutableListOf<String>()
+            for (i in list.indices) {
+                for (j in i + 1 until list.size) {
+                    val a = list[i].name.trim().lowercase()
+                    val b = list[j].name.trim().lowercase()
+                    val close = a != b && (a.startsWith(b) || b.startsWith(a)) &&
+                        kotlin.math.abs(a.length - b.length) <= 3
+                    if (close) found.add("« ${list[i].name} » et « ${list[j].name} »")
+                }
+            }
+            found.distinct()
+        }
+        if (similarNames.isNotEmpty()) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("similar_caisses_warning"),
+                shape = LuminaTokens.ShapeSubCard,
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Noms de caisses très proches",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    similarNames.forEach { pair ->
+                        Text(
+                            text = pair,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                    Text(
+                        text = "Vérifiez qu'il ne s'agit pas d'un doublon : renommez ou supprimez la caisse en trop.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+
         // Actions en duo (Pill Buttons)
         Row(
             modifier = Modifier.fillMaxWidth(),

@@ -161,7 +161,11 @@ fun FinancialSummaryCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = String.format(Locale.FRANCE, "%.1f %% épargne", savingsRatePercent.coerceAtLeast(0.0)),
+                            text = if (totalIncomeCents <= 0L) {
+                                "Pas de produit"
+                            } else {
+                                String.format(Locale.FRANCE, "%.1f %% épargne", savingsRatePercent.coerceAtLeast(0.0))
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -253,7 +257,11 @@ fun FinancialSummaryCard(
 
                         // Pourcentage
                         Text(
-                            text = String.format(Locale.FRANCE, "%.0f %% conservé", savingsRatePercent.coerceIn(0.0, 100.0)),
+                            text = if (totalIncomeCents <= 0L) {
+                                "N/A"
+                            } else {
+                                String.format(Locale.FRANCE, "%.0f %% conservé", savingsRatePercent.coerceIn(0.0, 100.0))
+                            },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = Color.White.copy(alpha = 0.85f),
@@ -266,7 +274,8 @@ fun FinancialSummaryCard(
                     // Mini jauge ultra-fine
                     LinearProgressIndicator(
                         progress = {
-                            (savingsRatePercent.coerceIn(0.0, 100.0) / 100.0).toFloat()
+                            if (totalIncomeCents <= 0L) 0f
+                            else (savingsRatePercent.coerceIn(0.0, 100.0) / 100.0).toFloat()
                         },
                         modifier = Modifier
                             .fillMaxWidth()

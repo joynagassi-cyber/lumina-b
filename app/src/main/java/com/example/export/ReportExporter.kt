@@ -56,7 +56,11 @@ object ReportExporter {
         totalExpenseCents: Long,
         netBalanceCents: Long,
         bilan: BilanSnapshot = BilanSnapshot(),
-        memberCount: Int = 0
+        memberCount: Int = 0,
+        periodStartMillis: Long = 0L,
+        periodEndMillis: Long = 0L,
+        generatedBy: String = "",
+        documentNumber: String = ""
     ): File {
         val cacheDir = File(context.cacheDir, "reports").apply { mkdirs() }
         val safeName = profile.displayName
@@ -91,6 +95,22 @@ object ReportExporter {
         val accentBarPaint = Paint().apply { color = accent; isAntiAlias = true }
         val headerBandPaint = Paint().apply { color = accent; isAntiAlias = true }
         val tableHeaderPaint = Paint().apply { color = AndroidColor.rgb(30, 41, 59); isAntiAlias = true }
+
+        // Bornes de la période, référence du document et devise
+        val reportEnd = when {
+            periodEndMillis <= 0L || periodEndMillis == Long.MAX_VALUE -> System.currentTimeMillis()
+            else -> periodEndMillis
+        }
+        val reportStart = when {
+            periodStartMillis > 0L -> periodStartMillis
+            else -> transactions.minOfOrNull { it.timestamp } ?: reportEnd
+        }
+        val periodRangeLabel = "${dateFormat.format(Date(reportStart))} → ${dateFormat.format(Date(reportEnd))}"
+        val docRef = documentNumber.ifBlank {
+            "RG-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.FRANCE).format(Date())
+        }
+        val currencyCode = profile.currencyCode.ifBlank { "FCFA" }
+        val issuedBy = generatedBy.ifBlank { "Non identifié" }
 
         val document = PdfDocument()
         var pageNumber = 1
@@ -171,7 +191,7 @@ object ReportExporter {
             canvas.drawText(profile.address.take(95), textLeft, 65f, whiteSub)
         }
         canvas.drawText(
-            "BILAN FINANCIER ET COMPTE DE TRÉSORERIE — ${periodLabel.uppercase()}",
+            "RAPPORT DE GESTION MENSUEL — SITUATION DE TRÉSORERIE",
             textLeft,
             80f,
             textPaint(8.5f, AndroidColor.WHITE, bold = true)
@@ -180,19 +200,34 @@ object ReportExporter {
         // =================================================================
         // 2. Bandeau d'identification du document
         // =================================================================
-        var currentY = 112f
-        canvas.drawText("DOCUMENT DE GESTION", MARGIN, currentY, sectionPaint)
-        currentY += 12f
-        val identityLine = buildString {
-            append(tableRow("Période analysée", periodLabel))
-            if (profile.pastorName.isNotBlank()) append("   |   ").append(tableRow("Responsable", profile.pastorName))
-            if (profile.treasurerName.isNotBlank()) append("   |   ").append(tableRow("Trésorier", profile.treasurerName))
-            append("   |   ").append(tableRow("Membres au registre", memberCount.toString()))
-        }
-        canvas.drawText(identityLine.take(150), MARGIN, currentY, regularPaint)
+        var currentY = 110f
+        canvas.drawText("RÉFÉRENCES DU DOCUMENT", MARGIN, currentY, sectionPaint)
+        currentY += 11f
+        canvas.drawText(
+            "Document n° $docRef   •   Période du $periodRangeLabel   •   $periodLabel",
+            MARGIN,
+            currentY,
+            regularPaint
+        )
+        currentY += 10f
+        canvas.drawText(
+            "Devise : $currencyCode   •   Base comptable : trésorerie " +
+                "(encaissements et décaissements réels, hors engagements)",
+            MARGIN,
+            currentY,
+            smallPaint
+        )
+        currentY += 10f
+        val signatories = buildList {
+            if (profile.pastorName.isNotBlank()) add("Responsable : ${profile.pastorName}")
+            if (profile.treasurerName.isNotBlank()) add("Trésorier : ${profile.treasurerName}")
+            add("Édité le ${fullDateTimeFormat.format(Date())}")
+            add("Saisie : $issuedBy")
+        }.joinToString("   •   ")
+        canvas.drawText(signatories.take(150), MARGIN, currentY, smallPaint)
         currentY += 8f
         canvas.drawLine(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY, rulePaint)
-        currentY += 16f
+        currentY += 14f
 
         // =================================================================
         // 3. Synthèse (4 indicateurs)
@@ -210,7 +245,14 @@ object ReportExporter {
                 CurrencyFormatter.format(netBalanceCents, withSign = true, isPositive = netBalanceCents >= 0),
                 if (netBalanceCents >= 0) AndroidColor.rgb(4, 120, 87) else AndroidColor.rgb(190, 24, 93)
             ),
-            Triple("TRÉSORERIE", CurrencyFormatter.format(bilan.tresorerieTotaleCents), AndroidColor.rgb(30, 41, 59))
+            Triple(
+                "TRÉSORERIE CLÔTURE",
+                CurrencyFormatter.format(
+                    if (bilan.registerStatements.isEmpty()) bilan.tresorerieTotaleCents
+                    else bilan.closingTresorerieCents
+                ),
+                AndroidColor.rgb(30, 41, 59)
+            )
         )
         kpis.forEachIndexed { index, kpi ->
             val x = MARGIN + index * (kpiWidth + 8f)
@@ -220,8 +262,13 @@ object ReportExporter {
             canvas.drawText(kpi.second.take(16), x + 8f, currentY + 32f, textPaint(9.5f, kpi.third, bold = true))
         }
         currentY += kpiHeight + 6f
+        val savingsText = if (totalIncomeCents <= 0L) {
+            "N/A (aucun produit enregistré sur la période)"
+        } else {
+            String.format(Locale.FRANCE, "%.1f %%", bilan.tauxEpargnePercent)
+        }
         canvas.drawText(
-            "Taux d'épargne de la période : ${String.format(Locale.FRANCE, "%.1f", bilan.tauxEpargnePercent)} %" +
+            "Taux d'épargne de la période : $savingsText" +
                 "   •   Virements internes : ${CurrencyFormatter.format(bilan.totalTransfersCents)} (hors produits et charges)",
             MARGIN,
             currentY + 8f,
@@ -310,48 +357,95 @@ object ReportExporter {
         // =================================================================
         // 5. Situation de trésorerie par caisse
         // =================================================================
-        if (bilan.registerBalances.isNotEmpty()) {
+        val statements = bilan.registerStatements
+        if (statements.isNotEmpty()) {
+            if (currentY + 90f > PAGE_HEIGHT - 90f) {
+                newPage("RAPPORT DE GESTION — SUITE")
+                currentY = 58f
+            }
             canvas.drawText("3. SITUATION DE TRÉSORERIE PAR CAISSE", MARGIN, currentY, sectionPaint)
             currentY += 12f
-            canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 16f, tableHeaderPaint)
-            canvas.drawText("CAISSE", MARGIN + 6f, currentY + 11f, headerTextPaint)
-            val rightHeader = Paint(headerTextPaint).apply { textAlign = Paint.Align.RIGHT }
-            canvas.drawText("SOLDE ACTUEL", PAGE_WIDTH - MARGIN - 6f, currentY + 11f, rightHeader)
-            currentY += 16f
-            bilan.registerBalances.forEachIndexed { index, entry ->
-                if (index % 2 == 1) {
-                    canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 15f, cardBgPaint)
+
+            val colName = MARGIN + 4f
+            val colType = MARGIN + 128f
+            val colOpen = MARGIN + 250f
+            val colIn = MARGIN + 336f
+            val colOut = MARGIN + 421f
+            val colClose = PAGE_WIDTH - MARGIN - 4f
+            val cellPaint = textPaint(7.3f, AndroidColor.rgb(63, 63, 70))
+            val cellBold = textPaint(7.3f, AndroidColor.rgb(9, 9, 11), bold = true)
+
+            fun moneyCell(value: Long): String = CurrencyFormatter.format(value)
+
+            fun headerRow() {
+                canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 15f, tableHeaderPaint)
+                val headSmall = textPaint(7f, AndroidColor.WHITE, bold = true)
+                canvas.drawText("CAISSE", colName, currentY + 10f, headSmall)
+                canvas.drawText("TYPE", colType, currentY + 10f, headSmall)
+                fun rightHead(label: String, x: Float) {
+                    val rp = Paint(headSmall).apply { textAlign = Paint.Align.RIGHT }
+                    canvas.drawText(label, x, currentY + 10f, rp)
                 }
-                canvas.drawText(entry.first.take(60), MARGIN + 6f, currentY + 11f, regularPaint)
-                val rightPaint = Paint(regularPaint).apply { textAlign = Paint.Align.RIGHT }
-                canvas.drawText(
-                    CurrencyFormatter.format(entry.second),
-                    PAGE_WIDTH - MARGIN - 6f,
-                    currentY + 11f,
-                    rightPaint
-                )
+                rightHead("OUVERTURE", colOpen)
+                rightHead("ENTRÉES", colIn)
+                rightHead("SORTIES", colOut)
+                rightHead("CLÔTURE", colClose)
                 currentY += 15f
             }
+            headerRow()
+
+            fun rightCell(value: String, x: Float, paint: Paint) {
+                val rp = Paint(paint).apply { textAlign = Paint.Align.RIGHT }
+                canvas.drawText(value, x, currentY + 10f, rp)
+            }
+
+            statements.forEachIndexed { index, statement ->
+                if (currentY + 16f > PAGE_HEIGHT - 60f) {
+                    newPage("RAPPORT DE GESTION — SUITE")
+                    currentY = 58f
+                    headerRow()
+                }
+                if (index % 2 == 1) {
+                    canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 14f, cardBgPaint)
+                }
+                canvas.drawText(statement.name.take(24), colName, currentY + 10f, cellPaint)
+                canvas.drawText(statement.typeLabel.take(13), colType, currentY + 10f, cellPaint)
+                rightCell(moneyCell(statement.openingCents), colOpen, cellPaint)
+                rightCell("+${moneyCell(statement.incomeCents)}", colIn, cellPaint)
+                rightCell("−${moneyCell(statement.expenseCents)}", colOut, cellPaint)
+                rightCell(moneyCell(statement.closingCents), colClose, cellBold)
+                currentY += 14f
+            }
+
             canvas.drawLine(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY, rulePaint)
             currentY += 12f
-            canvas.drawText("TOTAL TRÉSORERIE", MARGIN + 6f, currentY, boldPaint)
-            val rightBold = Paint(boldPaint).apply { textAlign = Paint.Align.RIGHT }
-            canvas.drawText(
-                CurrencyFormatter.format(bilan.tresorerieTotaleCents),
-                PAGE_WIDTH - MARGIN - 6f,
-                currentY,
-                rightBold
-            )
-            currentY += 22f
+            canvas.drawText("TOTAL", colName, currentY, boldPaint)
+            fun rightTotal(value: String, x: Float) {
+                val rp = Paint(boldPaint).apply { textAlign = Paint.Align.RIGHT }
+                canvas.drawText(value, x, currentY, rp)
+            }
+            rightTotal(moneyCell(bilan.openingTresorerieCents), colOpen)
+            rightTotal("+${moneyCell(statements.sumOf { it.incomeCents })}", colIn)
+            rightTotal("−${moneyCell(statements.sumOf { it.expenseCents })}", colOut)
+            rightTotal(moneyCell(bilan.closingTresorerieCents), colClose)
+            currentY += 16f
 
-            // Mention de contrôle interne
             canvas.drawText(
-                "Les virements internes déplacent la trésorerie d'une caisse à l'autre sans affecter le résultat.",
+                "Contrôle : total ouverture + total entrées − total sorties = total clôture " +
+                    "(${CurrencyFormatter.format(bilan.closingTresorerieCents)} $currencyCode).",
                 MARGIN,
                 currentY,
                 smallPaint
             )
-            currentY += 18f
+            currentY += 10f
+            canvas.drawText(
+                "Les virements internes figurent dans les mouvements des deux caisses concernées " +
+                    "mais n'affectent ni les produits, ni les charges, ni le résultat.",
+                MARGIN,
+                currentY,
+                smallPaint
+            )
+            currentY += 16f
         }
 
         // =================================================================
@@ -361,7 +455,7 @@ object ReportExporter {
         if (series.isNotEmpty()) {
             val chartHeight = 96f
             if (currentY + chartHeight + 40f > PAGE_HEIGHT - 60f) {
-                newPage("BILAN FINANCIER — SUITE")
+                newPage("RAPPORT DE GESTION — SUITE")
                 currentY = 58f
             }
             canvas.drawText("4. ÉVOLUTION DES FLUX SUR 6 MOIS", MARGIN, currentY, sectionPaint)
@@ -434,31 +528,49 @@ object ReportExporter {
         val totalCharges = bilan.chargesByCategory.sumOf { it.second }
         if (totalCharges > 0L) {
             if (currentY + 90f > PAGE_HEIGHT - 80f) {
-                newPage("BILAN FINANCIER — SUITE")
+                newPage("RAPPORT DE GESTION — SUITE")
                 currentY = 58f
             }
             canvas.drawText("5. RÉPARTITION DES CHARGES", MARGIN, currentY, sectionPaint)
             currentY += 12f
 
+            val amountRight = PAGE_WIDTH - MARGIN
+            val percentRight = PAGE_WIDTH - MARGIN - 78f
             bilan.chargesByCategory.take(6).forEach { entry ->
                 val ratio = (entry.second.toDouble() / totalCharges.toDouble()).toFloat()
-                canvas.drawText(entry.first.take(40), MARGIN, currentY, regularPaint)
+                canvas.drawText(entry.first.take(38), MARGIN, currentY, regularPaint)
                 val barLeft = MARGIN + 190f
-                val barRight = PAGE_WIDTH - MARGIN - 62f
+                val barRight = percentRight - 96f
                 canvas.drawRect(barLeft, currentY - 7f, barRight, currentY - 1f, cardBorderPaint)
-                canvas.drawRect(barLeft, currentY - 7f, barLeft + (barRight - barLeft) * ratio, currentY - 1f,
-                    Paint().apply { color = accent; isAntiAlias = true })
-                val percent = String.format(Locale.FRANCE, "%.1f %%", ratio * 100)
+                canvas.drawRect(
+                    barLeft,
+                    currentY - 7f,
+                    barLeft + (barRight - barLeft) * ratio,
+                    currentY - 1f,
+                    Paint().apply { color = accent; isAntiAlias = true }
+                )
                 val percentPaint = Paint(smallPaint).apply { textAlign = Paint.Align.RIGHT }
                 canvas.drawText(
-                    "$percent  ${CurrencyFormatter.format(entry.second)}",
-                    PAGE_WIDTH - MARGIN,
+                    String.format(Locale.FRANCE, "%.1f", ratio * 100.0).replace(',', '.') + " %",
+                    percentRight,
                     currentY,
                     percentPaint
                 )
+                val amountPaint = Paint(smallPaint).apply { textAlign = Paint.Align.RIGHT }
+                canvas.drawText(
+                    CurrencyFormatter.format(entry.second),
+                    amountRight,
+                    currentY,
+                    amountPaint
+                )
                 currentY += 15f
             }
-            currentY += 10f
+            canvas.drawLine(MARGIN, currentY - 6f, PAGE_WIDTH - MARGIN, currentY - 6f, rulePaint)
+            canvas.drawText("TOTAL DES CHARGES", MARGIN, currentY + 4f, boldPaint)
+            val totalPercentPaint = Paint(boldPaint).apply { textAlign = Paint.Align.RIGHT }
+            canvas.drawText("100,0 %", percentRight, currentY + 4f, totalPercentPaint)
+            canvas.drawText(CurrencyFormatter.format(totalCharges), amountRight, currentY + 4f, totalPercentPaint)
+            currentY += 18f
         }
 
         // =================================================================
@@ -469,9 +581,10 @@ object ReportExporter {
             currentY = 58f
 
             val colDate = MARGIN
-            val colCaisse = MARGIN + 52f
-            val colCat = MARGIN + 150f
-            val colTitle = MARGIN + 268f
+            val colCaisse = MARGIN + 48f
+            val colCat = MARGIN + 134f
+            val colTitle = MARGIN + 236f
+            val colBy = PAGE_WIDTH - MARGIN - 96f
             val colAmount = PAGE_WIDTH - MARGIN
 
             fun drawTableHeaderRow() {
@@ -480,6 +593,8 @@ object ReportExporter {
                 canvas.drawText("CAISSE", colCaisse, currentY + 10f, headerTextPaint)
                 canvas.drawText("CATÉGORIE", colCat, currentY + 10f, headerTextPaint)
                 canvas.drawText("INTITULÉ", colTitle, currentY + 10f, headerTextPaint)
+                val smallHead = textPaint(7f, AndroidColor.WHITE, bold = true)
+                canvas.drawText("SAISIE PAR", colBy, currentY + 10f, smallHead)
                 val right = Paint(headerTextPaint).apply { textAlign = Paint.Align.RIGHT }
                 canvas.drawText("MONTANT", colAmount - 4f, currentY + 10f, right)
                 currentY += 15f
@@ -498,9 +613,15 @@ object ReportExporter {
                 }
                 val title = if (tx.note.isNotBlank()) "${tx.title} — ${tx.note}" else tx.title
                 canvas.drawText(dateFormat.format(Date(tx.timestamp)), colDate + 4f, currentY + 10f, regularPaint)
-                canvas.drawText(tx.cashRegisterName.take(17), colCaisse, currentY + 10f, regularPaint)
-                canvas.drawText(tx.category.take(19), colCat, currentY + 10f, regularPaint)
-                canvas.drawText(title.take(38), colTitle, currentY + 10f, regularPaint)
+                canvas.drawText(tx.cashRegisterName.take(15), colCaisse, currentY + 10f, regularPaint)
+                canvas.drawText(tx.category.take(18), colCat, currentY + 10f, regularPaint)
+                canvas.drawText(title.take(32), colTitle, currentY + 10f, regularPaint)
+                canvas.drawText(
+                    (tx.updatedBy.ifBlank { "—" }).take(14),
+                    colBy,
+                    currentY + 10f,
+                    textPaint(7f, AndroidColor.rgb(100, 116, 139))
+                )
 
                 val amountColor = when {
                     tx.isTransfer -> AndroidColor.rgb(100, 116, 139)
@@ -546,18 +667,27 @@ object ReportExporter {
         )
         currentY += 14f
         canvas.drawText(
-            "Les montants sont exprimés en ${profile.currencyCode.ifBlank { "FCFA" }} et arrêtés à la date d'édition.",
+            "Montants exprimés en $currencyCode, arrêtés au ${dateFormat.format(Date(reportEnd))} " +
+                "(base : comptabilité de trésorerie).",
             MARGIN,
             currentY,
             regularPaint
         )
-        currentY += 26f
+        currentY += 12f
+        canvas.drawText(
+            "Document $docRef • Période $periodRangeLabel • Saisie : $issuedBy • " +
+                "${transactions.size} écriture(s) rapprochée(s) du journal.",
+            MARGIN,
+            currentY,
+            smallPaint
+        )
+        currentY += 24f
 
         val signatureWidth = (PAGE_WIDTH - 2 * MARGIN - 20f) / 3f
         val labels = listOf(
-            profile.treasurerName.ifBlank { "Trésorier" } to "Trésorier",
-            profile.pastorName.ifBlank { "Responsable" } to "Responsable",
-            "Contrôle / Audit" to "Visa"
+            profile.treasurerName.ifBlank { "………………………" } to "Trésorier (saisie)",
+            profile.pastorName.ifBlank { "………………………" } to "Responsable (validation)",
+            "………………………" to "Contrôle / Audit (visa)"
         )
         labels.forEachIndexed { index, entry ->
             val x = MARGIN + index * (signatureWidth + 10f)
