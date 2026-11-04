@@ -64,6 +64,9 @@ interface TransactionDao {
     @Query("UPDATE transactions SET category = :newName WHERE category = :oldName")
     suspend fun renameCategory(oldName: String, newName: String)
 
+    @Query("SELECT * FROM transactions WHERE transferGroupId = :groupId AND isDeleted = 0")
+    suspend fun getByTransferGroup(groupId: String): List<TransactionEntity>
+
     @Query("DELETE FROM transactions")
     suspend fun deleteAllTransactions()
 

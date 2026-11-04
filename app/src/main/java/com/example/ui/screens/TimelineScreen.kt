@@ -95,6 +95,7 @@ fun TimelineScreen(
     onSearchQueryChange: (String) -> Unit,
     onDeleteTransaction: (Long) -> Unit,
     onEditTransaction: (TransactionEntity) -> Unit = {},
+    onCancelTransaction: (TransactionEntity) -> Unit = {},
     onSelectCaisseFilter: (Long?) -> Unit = {},
     onCategoryFilterSelected: (String?) -> Unit = {},
     onAmountRangeChange: (Long, Long) -> Unit = { _, _ -> },
@@ -433,7 +434,9 @@ fun TimelineScreen(
                                 onOpenClick = {
                                     if (!tx.isTransfer) onEditTransaction(tx)
                                 },
-                                onDeleteClick = { transactionToDelete = tx },
+                                onDeleteClick = {
+                                    if (!tx.isNeutralised) transactionToDelete = tx
+                                },
                                 showDivider = index < list.size - 1
                             )
                         }
@@ -445,31 +448,43 @@ fun TimelineScreen(
 
     if (transactionToDelete != null) {
         val tx = transactionToDelete!!
+        var reason by remember(tx.id) { mutableStateOf("") }
         AlertDialog(
             onDismissRequest = { transactionToDelete = null },
-            title = { Text(if (tx.isTransfer) "Supprimer le virement ?" else "Supprimer l'opération ?") },
+            title = {
+                Text(if (tx.isTransfer) "Annuler le virement ?" else "Annuler l'opération ?")
+            },
             text = {
-                Text(
-                    if (tx.isTransfer) {
-                        "Le virement sera retiré des deux caisses (${tx.cashRegisterName} et sa contrepartie)."
-                    } else {
-                        "Voulez-vous supprimer \"${tx.title}\" (${CurrencyFormatter.format(tx.amountCents)}) de ${tx.cashRegisterName} ?"
-                    }
-                )
+                Column {
+                    Text(
+                        if (tx.isTransfer) {
+                            "Une contre-écriture sera créée dans les deux caisses. Les deux lignes d'origine restent au journal, marquées annulées : la piste d'audit est conservée."
+                        } else {
+                            "\"${tx.title}\" (${CurrencyFormatter.format(tx.amountCents)}) sera neutralisée par une contre-écriture. L'écriture d'origine reste au journal."
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = reason,
+                        onValueChange = { reason = it },
+                        label = { Text("Motif de l'annulation (optionnel)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDeleteTransaction(tx.id)
+                        onCancelTransaction(tx.copy(note = reason))
                         transactionToDelete = null
-                    },
-                    modifier = Modifier.testTag("confirm_delete_button")
+                    }
                 ) {
-                    Text("Supprimer", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    Text("Annuler l'écriture", color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { transactionToDelete = null }) { Text("Annuler") }
+                TextButton(onClick = { transactionToDelete = null }) { Text("Retour") }
             }
         )
     }
@@ -525,13 +540,35 @@ fun TimelineTransactionRow(
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = transaction.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = transaction.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (transaction.isNeutralised) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                        maxLines = 1,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (transaction.isNeutralised) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = LuminaTokens.ShapeBadge,
+                            color = MaterialTheme.colorScheme.errorContainer
+                        ) {
+                            Text(
+                                text = if (transaction.isReversal) "contre-écriture" else "annulée",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(2.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(

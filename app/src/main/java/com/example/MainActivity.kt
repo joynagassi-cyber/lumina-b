@@ -726,7 +726,8 @@ fun LuminaApp(
                         onTypeFilterSelected = { viewModel.setTypeFilter(it) },
                         onSearchQueryChange = { viewModel.setSearchQuery(it) },
                         onDeleteTransaction = { viewModel.deleteTransaction(it) },
-                        onEditTransaction = { transactionToEdit = it }
+                        onEditTransaction = { transactionToEdit = it },
+                        onCancelTransaction = { tx -> viewModel.cancelTransaction(tx, tx.note) }
                     )
                     AppScreen.EXPORT -> ExportScreen(
                         uiState = uiState,
@@ -759,7 +760,9 @@ fun LuminaApp(
                         onNavigateToCaisses = { currentScreen = AppScreen.CAISSES },
                         onNavigateToCategories = { showCategoryManager = true },
                         onNavigateToExport = { currentScreen = AppScreen.EXPORT },
-                        onWipeData = { fullReset -> viewModel.wipeData(context, fullReset) }
+                        onWipeData = { fullReset -> viewModel.wipeData(context, fullReset) },
+                        onClosePreviousMonth = { viewModel.closePreviousMonth() },
+                        onReopenBooks = { viewModel.reopenBooks() }
                     )
                 }
             }

@@ -1,5 +1,34 @@
 # Lumina — journal des versions
 
+## v1.5.0 — clôture, contre-écriture, budget réalisé
+
+### Annulation par contre-écriture
+- Une écriture ne se supprime plus : elle s'**annule**. L'originale reste au
+  journal, marquée « annulée », et une **contre-écriture inverse** est créée au
+  même montant. Les soldes restent justes, la piste d'audit est intacte.
+- Un virement interne s'annule en une fois : contre-écriture dans les **deux**
+  caisses, les deux lignes d'origine restant visibles.
+- L'historique affiche une pastille « annulée » / « contre-écriture » et les
+  écritures neutralisées ne pèsent plus sur les produits, les charges, le
+  résultat ni les budgets.
+
+### Clôture des comptes
+- Paramètres → **Clôture des comptes** : « Clôturer le mois dernier » fige toutes
+  les écritures jusqu'à la fin du mois précédent ; « Réouvrir » lève le verrou.
+- Une période clôturée refuse toute saisie, modification, annulation ou virement
+  daté dans cette période, avec un message explicite.
+
+### Rapport de gestion
+- Nouvelle section **« Budget prévu / réalisé »** : plafond, réalisé, écart
+  (vert si marge, rouge si dépassement) et taux d'usage par catégorie.
+- La zone de validation indique le nombre d'**écritures annulées** sur la
+  période, en plus du nombre d'écritures rapprochées.
+
+### Technique
+- Base de données **version 7**, migration sans perte : deux colonnes ajoutées
+  aux écritures (`reversalOfUid`, `isCancelled`) et une au profil de l'église
+  (`booksClosedUntilMillis`).
+
 ## v1.4.0 — rapport de gestion auditable
 
 ### Vocabulaire et références du document

@@ -21,7 +21,7 @@ import kotlinx.coroutines.launch
         MemberEntity::class,
         UserEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -46,7 +46,7 @@ abstract class LuminaDatabase : RoomDatabase() {
                     "lumina_financial.db"
                 )
                 .addCallback(LuminaDatabaseCallback(scope))
-                .addMigrations(MIGRATION_5_6)
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
                 // Filet de sécurité pour les installations très anciennes (v4 et avant)
                 .fallbackToDestructiveMigration()
                 .build()
@@ -106,6 +106,17 @@ abstract class LuminaDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_app_users_uid` ON `app_users` (`uid`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_app_users_displayName` ON `app_users` (`displayName`)")
+            }
+        }
+
+        /**
+         * Version 7 : annulation par contre-écriture et clôture des comptes.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `reversalOfUid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isCancelled` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `church_profile` ADD COLUMN `booksClosedUntilMillis` INTEGER NOT NULL DEFAULT 0")
             }
         }
 
