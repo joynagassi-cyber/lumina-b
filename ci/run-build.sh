@@ -208,6 +208,7 @@ phase_verify() {
 # --- 6. GitHub Release (tags uniquement) -------------------------------------
 phase_release() {
   local tag="${GITHUB_REF_NAME:?}"
+  : "${GITHUB_REPOSITORY:=$(gh repo view --json nameWithOwner --jq .nameWithOwner)}"
   local files
   files=$(ls app/build/outputs/apk/release/*.apk app/build/outputs/bundle/release/*.aab 2>/dev/null || true)
   [ -n "$files" ] || { echo "Aucun binaire à publier."; return 1; }
@@ -223,8 +224,21 @@ phase_release() {
         --generate-notes --verify-tag
     fi
   fi
-  gh release edit "$tag" --draft=false 2>/dev/null || true
-  gh release view "$tag" --json url,assets --jq '"\(.url) — \(.assets | length) fichier(s)"'
+  # Publication. En CI, `gh release edit <tag> --draft=false` échoue lorsque la
+  # release est encore « untagged » (constaté le 2026-11-04 : run 41809739025,
+  # binaires attachés mais release restée en brouillon) : on passe par l'API
+  # avec l'identifiant explicite de la release.
+  local id
+  id=$(gh api "repos/${GITHUB_REPOSITORY}/releases" \
+        --jq ".[] | select(.tag_name==\"$tag\") | .id" 2>/dev/null | sed -n '1p' || true)
+  if [ -n "$id" ]; then
+    gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/$id" \
+      -f draft=false -f tag_name="$tag" >/dev/null
+  else
+    gh release edit "$tag" --draft=false
+  fi
+  gh release view "$tag" --json url,isDraft,assets \
+    --jq '"\(.url) — brouillon=\(.isDraft) — \(.assets | length) fichier(s)"'
 }
 
 # --- Orchestration -----------------------------------------------------------
