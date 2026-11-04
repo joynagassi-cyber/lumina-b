@@ -103,7 +103,7 @@ fun BudgetScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "Contrôle déterministe de vos plafonds",
+                    text = "Maîtrisez vos plafonds de dépenses",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -304,8 +304,9 @@ fun BudgetScreen(
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
             ) {
                 items(uiState.categoryBudgetProgress, key = { it.categoryName }) { item ->
                     CategoryBudgetCard(

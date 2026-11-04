@@ -29,10 +29,25 @@ data class TransactionEntity(
     val timestamp: Long = System.currentTimeMillis(),
     val note: String = "",
     val cashRegisterId: Long = 1L, // Identifiant de la caisse
-    val cashRegisterName: String = "Caisse Espèces" // Nom de la caisse pour traçabilité
+    val cashRegisterName: String = "Caisse Espèces", // Nom de la caisse pour traçabilité
+    /**
+     * Identifiant commun aux deux écritures d'un virement interne
+     * (débit de la caisse source + crédit de la caisse cible).
+     * Vide pour une opération ordinaire.
+     */
+    val transferGroupId: String = "",
+    /** Photo ou scan du justificatif (facture, reçu), optionnel. */
+    val receiptPhotoUri: String = ""
 ) {
     val amountFormatted: String
         get() = CurrencyFormatter.format(amountCents)
+
+    /** Un virement interne ne doit jamais être compté comme revenu ou dépense. */
+    val isTransfer: Boolean
+        get() = transferGroupId.isNotBlank()
+
+    val hasReceipt: Boolean
+        get() = receiptPhotoUri.isNotBlank()
 }
 
 class Converters {

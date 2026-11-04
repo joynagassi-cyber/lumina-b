@@ -40,6 +40,9 @@ interface BudgetDao {
     @Query("DELETE FROM budgets WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("UPDATE budgets SET categoryName = :newName WHERE categoryName = :oldName")
+    suspend fun renameCategory(oldName: String, newName: String)
+
     @Query("DELETE FROM budgets WHERE categoryName = :categoryName")
     suspend fun deleteByCategory(categoryName: String)
 

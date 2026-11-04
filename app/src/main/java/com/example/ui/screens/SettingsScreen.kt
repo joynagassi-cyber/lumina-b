@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Church
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
@@ -68,6 +69,7 @@ fun SettingsScreen(
     onNavigateToCaisses: () -> Unit = {},
     onNavigateToCategories: () -> Unit,
     onNavigateToExport: () -> Unit,
+    onEditChurchProfile: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -87,7 +89,7 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.onBackground
         )
         Text(
-            text = "Personnalisation & configuration déterministe",
+            text = "Personnalisation et confidentialité",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -140,7 +142,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "Moteur SQLite Déterministe • 100% Local",
+                            text = "Fonctionne entièrement hors-ligne",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.80f)
                         )
@@ -179,6 +181,24 @@ fun SettingsScreen(
             }
         }
 
+
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
+
+        // SECTION 0 : IDENTITÉ DE L'ÉGLISE
+        GroupedCard(title = "Identité de l'église") {
+            ListRow(
+                title = uiState.profile.displayName,
+                subtitle = listOfNotNull(
+                    uiState.profile.denomination.takeIf { it.isNotBlank() },
+                    uiState.profile.city.takeIf { it.isNotBlank() }
+                ).joinToString(" • ").ifBlank { "Nom, logo et couleur d'accent des rapports" },
+                icon = Icons.Default.Church,
+                iconTileColor = MaterialTheme.colorScheme.primaryContainer,
+                iconTint = MaterialTheme.colorScheme.primary,
+                onClick = onEditChurchProfile,
+                showDivider = false
+            )
+        }
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
@@ -242,7 +262,7 @@ fun SettingsScreen(
         GroupedCard(title = "Devise Comptable") {
             ListRow(
                 title = "Franc CFA (FCFA / XOF)",
-                subtitle = "Devise unique de l'Afrique de l'Ouest • Arithmétique entière déterministe en centimes",
+                subtitle = "Devise unique de l'Afrique de l'Ouest, montants exacts au franc près",
                 icon = Icons.Default.Payments,
                 iconTileColor = MaterialTheme.colorScheme.primaryContainer,
                 iconTint = MaterialTheme.colorScheme.primary,
@@ -364,8 +384,8 @@ fun SettingsScreen(
         // SECTION 5 : SÉCURITÉ & DÉTERMINISME
         GroupedCard(title = "Sécurité & Confidentialité") {
             ListRow(
-                title = "100% Hors-Ligne • SQLite Room",
-                subtitle = "Vos écritures comptables ne transitent par aucun serveur externe. Calculs rigoureusement déterministes sans approximation IEEE 754.",
+                title = "100 % hors-ligne et privé",
+                subtitle = "Vos écritures ne transitent par aucun serveur externe : tout est enregistré sur votre appareil.",
                 icon = Icons.Default.Security,
                 iconTileColor = MaterialTheme.colorScheme.primaryContainer,
                 iconTint = MaterialTheme.colorScheme.primary,

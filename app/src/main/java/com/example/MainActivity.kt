@@ -1,7 +1,11 @@
 package com.example
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -33,6 +37,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Menu
@@ -97,6 +102,8 @@ import com.example.ui.screens.BudgetScreen
 import com.example.ui.screens.CaissesScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ExportScreen
+import com.example.ui.screens.MembersScreen
+import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TimelineScreen
 import com.example.ui.theme.LuminaTheme
@@ -109,6 +116,7 @@ enum class AppScreen(val title: String) {
     DASHBOARD("Bilan"),
     CAISSES("Caisses"),
     BUDGETS("Budgets"),
+    MEMBERS("Membres"),
     TIMELINE("Historique"),
     EXPORT("Exports"),
     SETTINGS("Paramètres")
@@ -119,12 +127,15 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        com.example.notifications.LuminaNotifier.ensureChannel(applicationContext)
         val database = LuminaDatabase.getDatabase(applicationContext, lifecycleScope)
         val repository = TransactionRepository(
             database.transactionDao(),
             database.categoryDao(),
             database.budgetDao(),
-            database.cashRegisterDao()
+            database.cashRegisterDao(),
+            database.churchProfileDao(),
+            database.memberDao()
         )
 
         setContent {
@@ -133,7 +144,10 @@ class MainActivity : ComponentActivity() {
             )
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-            LuminaTheme(themeMode = uiState.themeMode) {
+            LuminaTheme(
+                themeMode = uiState.themeMode,
+                accentHex = uiState.profile.accentColorHex
+            ) {
                 LuminaApp(viewModel = viewModel, uiState = uiState)
             }
         }
@@ -150,6 +164,7 @@ fun LuminaApp(
     var currentScreen by remember { mutableStateOf(AppScreen.DASHBOARD) }
     var showAddDialog by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
+    var showProfileEditor by remember { mutableStateOf(false) }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -164,11 +179,35 @@ fun LuminaApp(
         }
     }
 
-    // Réception des notifications
+    // Réception des messages de l'application
     LaunchedEffect(Unit) {
         viewModel.eventFlow.collectLatest { message ->
             snackbarHostState.showSnackbar(message)
         }
+    }
+
+    // Notifications système locales (confirmations, virements, alertes budget)
+    val notificationPermission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(uiState.profile.onboardingCompleted) {
+        if (uiState.profile.onboardingCompleted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    LaunchedEffect(Unit) {
+        viewModel.notificationFlow.collectLatest { event ->
+            com.example.notifications.LuminaNotifier.notify(context, event.title, event.body)
+        }
+    }
+
+    // Premier lancement : assistant de création du profil de l'église
+    if (!uiState.profile.onboardingCompleted) {
+        OnboardingScreen(
+            initialProfile = uiState.profile,
+            onFinish = { profile -> viewModel.completeOnboardingFromScreen(profile) }
+        )
+        return
     }
 
     // Modal Navigation Drawer (Menu Hamburger)
@@ -211,7 +250,7 @@ fun LuminaApp(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Comptabilité Déterministe",
+                                text = "Gestion financière de l'église",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -321,6 +360,19 @@ fun LuminaApp(
                 )
 
                 NavigationDrawerItem(
+                    label = { Text("Registre des Membres", fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.Groups, contentDescription = null) },
+                    selected = currentScreen == AppScreen.MEMBERS,
+                    onClick = {
+                        currentScreen = AppScreen.MEMBERS
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier
+                        .padding(NavigationDrawerItemDefaults.ItemPadding)
+                        .testTag("drawer_item_members")
+                )
+
+                NavigationDrawerItem(
                     label = { Text("Rapports & Exports", fontWeight = FontWeight.SemiBold) },
                     icon = { Icon(Icons.Default.Share, contentDescription = null) },
                     selected = currentScreen == AppScreen.EXPORT,
@@ -380,7 +432,7 @@ fun LuminaApp(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                     Text(
-                        text = "Room SQLite • Arithmétique entière",
+                        text = "Données enregistrées sur votre appareil",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         fontSize = 10.sp
@@ -402,6 +454,7 @@ fun LuminaApp(
                                 AppScreen.CAISSES -> "Caisses"
                                 AppScreen.BUDGETS -> "Budgets"
                                 AppScreen.TIMELINE -> "Historique"
+                                AppScreen.MEMBERS -> "Membres"
                                 AppScreen.EXPORT -> "Rapports"
                                 AppScreen.SETTINGS -> "Paramètres"
                             },
@@ -596,8 +649,19 @@ fun LuminaApp(
                         },
                         onDeleteCategory = { cat -> viewModel.deleteCategory(cat) }
                     )
+                    AppScreen.MEMBERS -> MembersScreen(
+                        members = uiState.members,
+                        onAddMember = { viewModel.addMember(it) },
+                        onUpdateMember = { viewModel.updateMember(it) },
+                        onDeleteMember = { viewModel.deleteMember(it) }
+                    )
                     AppScreen.TIMELINE -> TimelineScreen(
                         uiState = uiState,
+                        onSelectCaisseFilter = { viewModel.setSelectedCashRegister(it) },
+                        onCategoryFilterSelected = { viewModel.setCategoryFilter(it) },
+                        onAmountRangeChange = { min, max -> viewModel.setAmountRange(min, max) },
+                        onSortModeSelected = { viewModel.setSortMode(it) },
+                        onResetFilters = { viewModel.clearFilters() },
                         onPeriodSelected = { viewModel.setPeriod(it) },
                         onTypeFilterSelected = { viewModel.setTypeFilter(it) },
                         onSearchQueryChange = { viewModel.setSearchQuery(it) },
@@ -611,6 +675,7 @@ fun LuminaApp(
                     )
                     AppScreen.SETTINGS -> SettingsScreen(
                         uiState = uiState,
+                        onEditChurchProfile = { showProfileEditor = true },
                         onThemeModeChange = { viewModel.setThemeMode(it) },
                         onAmountDisplayModeChange = { viewModel.setAmountDisplayMode(it) },
                         onNavigateToCaisses = { currentScreen = AppScreen.CAISSES },
@@ -620,6 +685,18 @@ fun LuminaApp(
                 }
             }
         }
+    }
+
+    if (showProfileEditor) {
+        OnboardingScreen(
+            initialProfile = uiState.profile,
+            startAtStep = 1,
+            finishLabel = "Enregistrer",
+            onFinish = { profile ->
+                viewModel.completeOnboardingFromScreen(profile)
+                showProfileEditor = false
+            }
+        )
     }
 
     if (showAddDialog) {
@@ -632,7 +709,7 @@ fun LuminaApp(
                 showAddDialog = false
                 showCategoryManager = true
             },
-            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName ->
+            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName, receiptPath ->
                 viewModel.addTransaction(
                     title = title,
                     type = type,
@@ -641,7 +718,8 @@ fun LuminaApp(
                     timestamp = timestamp,
                     note = note,
                     cashRegisterId = regId,
-                    cashRegisterName = regName
+                    cashRegisterName = regName,
+                    receiptPhotoUri = receiptPath
                 )
             }
         )
