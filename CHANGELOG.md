@@ -1,5 +1,44 @@
 # Lumina — journal des versions
 
+## v1.4.0 — rapport de gestion auditable
+
+### Vocabulaire et références du document
+- Le document s'appelle désormais **« Rapport de gestion mensuel — situation de
+  trésorerie »** : le mot *bilan* est réservé au patrimoine. L'écran d'accueil et
+  la barre de navigation suivent (« Rapport »).
+- En-tête complété : **numéro de document** (`RG-AAAAMMJJ-HHmm`), **période
+  exacte** (date de début → date de fin), **date et heure d'édition**, **devise**,
+  **base comptable** (trésorerie : encaissements et décaissements) et **auteur de
+  la saisie**.
+- La mention « membres au registre » ne figure plus dans le rapport financier.
+
+### Soldes d'ouverture et de clôture
+- Nouveau tableau **Situation de trésorerie par caisse** : type de caisse
+  (espèces, banque, mobile money, coffre), **solde d'ouverture**, entrées,
+  sorties et **solde de clôture**, avec ligne de total.
+- Ligne de **contrôle** imprimée : ouverture + entrées − sorties = clôture, et
+  rappel que les virements internes ne touchent pas le résultat.
+
+### Anomalies corrigées
+- **Taux d'épargne** : affiche « N/A (aucun produit enregistré sur la période) »
+  au lieu de « 0,0 % » sans signification ; même règle dans l'application.
+- **Répartition des charges** : pourcentage et montant occupent des colonnes
+  séparées (plus de « 000,0 % » illisible), total à 100 % ajouté.
+- Journal des écritures : nouvelle colonne **« Saisie par »** (traçabilité de
+  l'auteur).
+
+### Caisses
+- **Refus des doublons** : deux caisses ne peuvent plus porter le même nom
+  (comparaison insensible à la casse, aux accents et aux espaces).
+- **Alerte visible** dans l'écran Caisses quand deux noms sont très proches
+  (« Caisse principale » / « Caisse principal »), avec la consigne de renommer ou
+  supprimer.
+
+### Plan de comptes
+- Catégories ajoutées : *Frais bancaires & commissions*, *Construction &
+  équipement*, *Événements & fêtes*, *Cotisations des membres*, *Dons affectés à
+  un projet*.
+
 ## v1.3.1 — filtres rattachés, écritures modifiables
 
 ### Historique : deux icônes de filtre dans la page

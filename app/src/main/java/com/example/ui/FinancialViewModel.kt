@@ -93,6 +93,19 @@ data class MonthlyPoint(
     val netCents: Long get() = incomeCents - expenseCents
 }
 
+/**
+ * Situation d'une caisse sur une période :
+ * solde d'ouverture + entrées − sorties = solde de clôture.
+ */
+data class RegisterStatement(
+    val name: String,
+    val typeLabel: String,
+    val openingCents: Long,
+    val incomeCents: Long,
+    val expenseCents: Long,
+    val closingCents: Long
+)
+
 /** Agrégats consolidés d'une période, base du rapport professionnel. */
 data class BilanSnapshot(
     val totalProductsCents: Long = 0,
@@ -104,7 +117,14 @@ data class BilanSnapshot(
     val productsByCategory: List<Pair<String, Long>> = emptyList(),
     val chargesByCategory: List<Pair<String, Long>> = emptyList(),
     val registerBalances: List<Pair<String, Long>> = emptyList(),
-    val monthlySeries: List<MonthlyPoint> = emptyList()
+    val monthlySeries: List<MonthlyPoint> = emptyList(),
+    /** Bornes exactes de la période analysée. */
+    val periodStartMillis: Long = 0L,
+    val periodEndMillis: Long = 0L,
+    /** Situation détaillée de chaque caisse : ouverture, mouvements, clôture. */
+    val registerStatements: List<RegisterStatement> = emptyList(),
+    val openingTresorerieCents: Long = 0L,
+    val closingTresorerieCents: Long = 0L
 )
 
 data class FinancialUiState(
@@ -416,6 +436,35 @@ class FinancialViewModel(
         // 5. Agrégats du bilan et série mensuelle (graphiques)
         // ==========================================
         val monthlySeries = buildMonthlySeries(allTx, selectedRegId)
+
+        // Situation de chaque caisse : ouverture + entrées − sorties = clôture.
+        // Les virements internes comptent dans les mouvements (l'argent change
+        // bien de caisse) mais restent exclus du résultat plus haut.
+        val (periodStartMillis, periodEndMillis) = calculateTimeBounds(period)
+        val statements = allRegisters.filter { !it.isDeleted }.map { reg ->
+            val regTx = allTx.filter { it.cashRegisterId == reg.id }
+            val before = regTx.filter { it.timestamp < periodStartMillis }
+            val during = regTx.filter { it.timestamp in periodStartMillis..periodEndMillis }
+            val opening = reg.initialBalanceCents +
+                before.filter { it.type == TransactionType.INCOME }.sumOf { it.amountCents } -
+                before.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amountCents }
+            val income = during.filter { it.type == TransactionType.INCOME }.sumOf { it.amountCents }
+            val expense = during.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amountCents }
+            RegisterStatement(
+                name = reg.name,
+                typeLabel = when (reg.iconType) {
+                    "mobile" -> "Mobile money"
+                    "bank" -> "Banque"
+                    "vault" -> "Coffre"
+                    else -> "Espèces"
+                },
+                openingCents = opening,
+                incomeCents = income,
+                expenseCents = expense,
+                closingCents = opening + income - expense
+            )
+        }
+
         val bilan = BilanSnapshot(
             totalProductsCents = totalIncome,
             totalChargesCents = totalExpense,
@@ -426,7 +475,12 @@ class FinancialViewModel(
             productsByCategory = catIncomes.toList(),
             chargesByCategory = catExpenses.toList(),
             registerBalances = registerSummaries.map { it.name to it.currentBalanceCents },
-            monthlySeries = monthlySeries
+            monthlySeries = monthlySeries,
+            periodStartMillis = periodStartMillis,
+            periodEndMillis = periodEndMillis,
+            registerStatements = statements,
+            openingTresorerieCents = statements.sumOf { it.openingCents },
+            closingTresorerieCents = statements.sumOf { it.closingCents }
         )
 
         FinancialUiState(
@@ -861,9 +915,27 @@ class FinancialViewModel(
     // ==========================================
     // Caisses
     // ==========================================
+    /** Compare deux noms de caisse sans tenir compte des accents, casse et espaces. */
+    private fun normalizeRegisterName(value: String): String =
+        java.text.Normalizer.normalize(value.trim().lowercase(), java.text.Normalizer.Form.NFD)
+            .replace("\\p{Mn}+".toRegex(), "")
+            .replace("\\s+".toRegex(), " ")
+
     fun addCashRegister(name: String, description: String, initialBalanceCents: Long, iconType: String) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
+            val wanted = normalizeRegisterName(name)
+            if (wanted.isBlank()) {
+                _eventFlow.emit("Le nom de la caisse est obligatoire")
+                return@launch
+            }
+            val duplicate = uiState.value.cashRegisters.firstOrNull {
+                normalizeRegisterName(it.name) == wanted
+            }
+            if (duplicate != null) {
+                _eventFlow.emit("Une caisse nommée \"${duplicate.name}\" existe déjà : choisissez un nom distinct")
+                return@launch
+            }
             val entity = CashRegisterEntity(
                 name = name.trim(),
                 description = description.trim(),
@@ -886,6 +958,14 @@ class FinancialViewModel(
     ) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
+            val wanted = normalizeRegisterName(name)
+            val duplicate = uiState.value.cashRegisters.firstOrNull {
+                it.id != id && normalizeRegisterName(it.name) == wanted
+            }
+            if (duplicate != null) {
+                _eventFlow.emit("Une caisse nommée \"${duplicate.name}\" existe déjà : choisissez un nom distinct")
+                return@launch
+            }
             val entity = CashRegisterEntity(
                 id = id,
                 name = name.trim(),
@@ -1189,6 +1269,11 @@ class FinancialViewModel(
     // ==========================================
     // Exports
     // ==========================================
+    /** Numéro de document du rapport : RG-AAAAMMJJ-HHmm, recalculé à l'ouverture. */
+    val reportDocumentNumber: String
+        get() = java.text.SimpleDateFormat("'RG-'yyyyMMdd-HHmm", java.util.Locale.FRANCE)
+            .format(java.util.Date())
+
     fun exportPdf(context: Context) {
         viewModelScope.launch {
             try {
@@ -1202,13 +1287,17 @@ class FinancialViewModel(
                     totalExpenseCents = state.totalExpenseCents,
                     netBalanceCents = state.netBalanceCents,
                     bilan = state.bilan,
-                    memberCount = state.members.size
+                    memberCount = state.members.size,
+                    periodStartMillis = state.bilan.periodStartMillis,
+                    periodEndMillis = state.bilan.periodEndMillis,
+                    generatedBy = state.currentUser?.displayName ?: "",
+                    documentNumber = reportDocumentNumber
                 )
                 ReportExporter.shareFile(
                     context = context,
                     file = pdfFile,
                     mimeType = "application/pdf",
-                    subject = "Bilan financier ${state.profile.displayName} — ${state.selectedPeriod.label}"
+                    subject = "Rapport de gestion ${state.profile.displayName} — ${state.selectedPeriod.label}"
                 )
                 _eventFlow.emit("Rapport PDF généré")
             } catch (e: Exception) {

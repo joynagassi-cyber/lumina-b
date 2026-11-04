@@ -118,7 +118,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class AppScreen(val title: String) {
-    DASHBOARD("Bilan"),
+    DASHBOARD("Rapport"),
     CAISSES("Caisses"),
     BUDGETS("Budgets"),
     MEMBERS("Membres"),
@@ -330,7 +330,7 @@ fun LuminaApp(
 
                 // Éléments de navigation du tiroir
                 NavigationDrawerItem(
-                    label = { Text("Bilan Financier", fontWeight = FontWeight.SemiBold) },
+                    label = { Text("Rapport de gestion", fontWeight = FontWeight.SemiBold) },
                     icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
                     selected = currentScreen == AppScreen.DASHBOARD,
                     onClick = {
@@ -590,7 +590,7 @@ fun LuminaApp(
                                 selected = currentScreen == AppScreen.DASHBOARD,
                                 onClick = { currentScreen = AppScreen.DASHBOARD },
                                 icon = Icons.Rounded.AccountBalanceWallet,
-                                label = "Bilan",
+                                label = "Rapport",
                                 testTag = "nav_item_dashboard",
                                 modifier = Modifier.weight(1f)
                             )

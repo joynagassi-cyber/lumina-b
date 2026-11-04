@@ -19,6 +19,9 @@ object DefaultChartOfAccounts {
         Triple("Communication & internet", "#27272A", ""),
         Triple("Fournitures de bureau", "#57534E", ""),
         Triple("Restauration & accueil", "#78716C", ""),
+        Triple("Frais bancaires & commissions", "#6B7280", ""),
+        Triple("Construction & équipement", "#334155", ""),
+        Triple("Événements & fêtes", "#9F1239", ""),
         Triple("Autres sorties", "#A1A1AA", "")
     )
 
@@ -30,6 +33,8 @@ object DefaultChartOfAccounts {
         Triple("Projets & constructions", "#4F46E5", ""),
         Triple("Vente d'objets & littérature", "#6366F1", ""),
         Triple("Subventions & partenariats", "#818CF8", ""),
+        Triple("Cotisations des membres", "#0EA5E9", ""),
+        Triple("Dons affectés à un projet", "#7C3AED", ""),
         Triple("Autres entrées", "#A1A1AA", "")
     )
 }

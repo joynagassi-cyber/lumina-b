@@ -100,7 +100,7 @@ fun DashboardScreen(
         ) {
             Column {
                 Text(
-                    text = "Bilan Financier",
+                    text = "Rapport de gestion",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground
@@ -444,7 +444,7 @@ fun DashboardScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "Bilan certifié",
+                            text = "Comptabilité de trésorerie",
                             style = MaterialTheme.typography.bodySmall,
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
