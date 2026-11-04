@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.rounded.AccountBalanceWallet
+import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Payments
 import androidx.compose.material.icons.rounded.PieChart
 import androidx.compose.material.icons.rounded.ReceiptLong
@@ -174,6 +175,7 @@ fun LuminaApp(
     var showChurchProfile by remember { mutableStateOf(false) }
     // Incrémenté à chaque appui sur le bouton flottant : chaque page ouvre sa propre création
     var createSignal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var transactionToEdit by remember { mutableStateOf<com.example.data.TransactionEntity?>(null) }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -617,11 +619,11 @@ fun LuminaApp(
                                 modifier = Modifier.weight(1f)
                             )
                             FloatingNavPillItem(
-                                selected = currentScreen == AppScreen.EXPORT,
-                                onClick = { currentScreen = AppScreen.EXPORT },
-                                icon = Icons.Rounded.Share,
-                                label = "Exports",
-                                testTag = "nav_item_export",
+                                selected = currentScreen == AppScreen.MEMBERS,
+                                onClick = { currentScreen = AppScreen.MEMBERS },
+                                icon = Icons.Rounded.Groups,
+                                label = "Membres",
+                                testTag = "nav_item_members",
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -723,7 +725,8 @@ fun LuminaApp(
                         onPeriodSelected = { viewModel.setPeriod(it) },
                         onTypeFilterSelected = { viewModel.setTypeFilter(it) },
                         onSearchQueryChange = { viewModel.setSearchQuery(it) },
-                        onDeleteTransaction = { viewModel.deleteTransaction(it) }
+                        onDeleteTransaction = { viewModel.deleteTransaction(it) },
+                        onEditTransaction = { transactionToEdit = it }
                     )
                     AppScreen.EXPORT -> ExportScreen(
                         uiState = uiState,
@@ -809,6 +812,35 @@ fun LuminaApp(
                     cashRegisterName = regName,
                     receiptPhotoUri = receiptPath
                 )
+            }
+        )
+    }
+
+    transactionToEdit?.let { tx ->
+        AddTransactionDialog(
+            categories = uiState.categories,
+            cashRegisters = uiState.cashRegisters,
+            defaultCashRegisterId = tx.cashRegisterId,
+            initial = tx,
+            onDismissRequest = { transactionToEdit = null },
+            onOpenCategoryManager = {
+                transactionToEdit = null
+                showCategoryManager = true
+            },
+            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName, receiptPath ->
+                viewModel.updateTransaction(
+                    id = tx.id,
+                    title = title,
+                    type = type,
+                    amountCents = amountCents,
+                    category = category,
+                    timestamp = timestamp,
+                    note = note,
+                    cashRegisterId = regId,
+                    cashRegisterName = regName,
+                    receiptPhotoUri = receiptPath
+                )
+                transactionToEdit = null
             }
         )
     }
