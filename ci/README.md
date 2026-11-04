@@ -17,14 +17,22 @@ bash scripts/check-ci.sh        # vérifie workflows + secrets
 bash scripts/check-ci.sh --run  # déclenche le build et suit le résultat
 ```
 
-## Option 2 — directement sur github.com
+## Option 2 — directement sur github.com (3 liens, chemin prérempli)
 
-1. Ouvrir <https://github.com/joynagassi-cyber/lumina-b> → bouton **Add file → Upload files**.
-2. Glisser-déposer les 3 fichiers de `ci/workflows/` dans un dossier `.github/workflows`
-   (créer le chemin en tapant `.github/workflows/` dans le champ du nom de fichier).
-3. Commit sur la branche `main`.
-4. Onglet **Actions** : les workflows « Android CI », « Android Release » et
-   « Bootstrap keystore » apparaissent.
+Ouvrir chaque lien, coller le contenu du fichier correspondant de `ci/workflows/`, puis
+« Commit changes » (sur la branche `main`) :
+
+- <https://github.com/joynagassi-cyber/lumina-b/new/main?filename=.github/workflows/android-ci.yml>
+- <https://github.com/joynagassi-cyber/lumina-b/new/main?filename=.github/workflows/android-release.yml>
+- <https://github.com/joynagassi-cyber/lumina-b/new/main?filename=.github/workflows/bootstrap-keystore.yml>
+
+Puis onglet **Actions** → « Android CI » → **Run workflow** pour lancer le premier build,
+ou pousser n'importe quel commit.
+
+## Option 3 — reconnecter GitHub
+
+Si la connexion GitHub d'Arena est ré-autorisée avec la permission **Workflows**,
+l'agent peut installer les fichiers lui-même : `bash scripts/install-ci.sh --push`.
 
 ## Contenu
 
