@@ -25,6 +25,10 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
+# fd 3 = stdout d'origine : les annotations doivent y être écrites même quand
+# la phase en cours a redirigé sa sortie vers un fichier de capture.
+exec 3>&1
+
 log() { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
 
 # --- Plomberie d'échec -------------------------------------------------------
@@ -34,28 +38,52 @@ mask() { # masque une valeur sensible dans les annotations
   return 0
 }
 
+escape_ann() { # échappe une sortie multi-lignes pour une annotation GitHub
+  local msg="$1" v
+  for v in "${MASK_VALUES[@]:-}"; do [ -n "$v" ] && msg=${msg//"$v"/***}; done
+  printf '%s' "$msg" | sed -e 's/%/%25/g' -e 's/\r//g' -e 's/\x1e//g' \
+    | tr '\n' '\036' | sed 's/\x1e/ %0A /g' | cut -c1-3000
+}
+
+note() { # $1 = titre, $2 = contenu -> annotation "notice" lisible par l'agent
+  echo "::notice title=${1}::$(escape_ann "${2:-}")"
+}
+
+CURRENT_STEP=""
+CURRENT_OUT=""
+
+summarize() { # sortie de build utile : sans les trames de pile (--stacktrace)
+  grep -v -E '^[[:space:]]+at [a-zA-Z_$]' "$1" 2>/dev/null | grep -v -E '^[[:space:]]*$' \
+    | tail -n 30 || true
+}
+
+on_error() { # errexit conserve son effet dans les phases ; l'annotation porte la sortie capturée
+  local rc=$? step="${CURRENT_STEP:-script}" out="${CURRENT_OUT:-}" msg=""
+  set +e
+  if [ -n "$out" ] && [ -f "$out" ]; then msg=$(summarize "$out"); fi
+  printf '::endgroup::\n' >&3
+  printf '::error title=%s::code %s — %s\n' "$step" "$rc" "$(escape_ann "${msg:-(aucune sortie)}")" >&3
+  exit "$rc"
+}
+trap on_error ERR
+
 run_step() { # $1 = nom affiché, $2... = fonction de phase
   local name="$1"; shift
-  local out rc=0
+  local out
   out=$(mktemp)
+  CURRENT_STEP="$name"
+  CURRENT_OUT="$out"
   echo "::group::${name}"
-  "$@" >"$out" 2>&1 || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    local msg
-    msg=$(tail -n 30 "$out" 2>/dev/null || true)
-    for v in "${MASK_VALUES[@]:-}"; do
-      [ -n "$v" ] && msg=${msg//"$v"/***}
-    done
-    msg=$(printf '%s' "$msg" | sed -e 's/%/%25/g' -e 's/\r//g' -e 's/\x1e//g' \
-          | tr '\n' '\036' | sed 's/\x1e/ %0A /g' | cut -c1-3500)
-    echo "::endgroup::"
-    echo "::error title=${name}::code ${rc} — ${msg:-(aucune sortie)}"
-    return "$rc"
-  fi
-  tail -n 20 "$out" || true
+  # Groupe de commandes + redirection : contrairement à `cmd || rc=$?`, cela ne
+  # désactive PAS `set -e` dans la phase appelée — un `gradlew` en échec arrête
+  # donc bien le pipeline et déclenche on_error().
+  { "$@" 2>&1; } >>"$out"
+  CURRENT_STEP=""
+  CURRENT_OUT=""
+  tail -n 25 "$out" || true
+  note "${name} — OK" "$(tail -n 8 "$out")"
   echo "::endgroup::"
   rm -f "$out"
-  return 0
 }
 
 # --- 1. JDK ------------------------------------------------------------------
@@ -155,8 +183,10 @@ phase_build() {
   fi
   echo "Tâches Gradle : $tasks"
   ./gradlew $tasks --no-configuration-cache --stacktrace
-  ls -lh app/build/outputs/apk/debug/ 2>/dev/null || true
-  ls -lh app/build/outputs/apk/release/ 2>/dev/null || true
+  echo "--- binaires produits ---"
+  find app/build -type f \( -name '*.apk' -o -name '*.aab' \) 2>/dev/null || true
+  echo "--- arborescence app/build/outputs ---"
+  find app/build/outputs -maxdepth 3 2>/dev/null | sed -n '1,40p' || true
 }
 
 # --- 5. Vérification de signature -------------------------------------------

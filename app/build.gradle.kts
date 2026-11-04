@@ -1,4 +1,5 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
+import java.util.Properties
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -12,7 +13,7 @@ plugins {
 // par Git) > valeur par défaut. Compatible avec l'injection AI Studio (mêmes noms de
 // signingConfigs : "release" et "debugConfig").
 val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = java.util.Properties().apply {
+val keystoreProperties = Properties().apply {
   if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.inputStream().use { load(it) }
   }
