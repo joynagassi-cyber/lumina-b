@@ -1,0 +1,29 @@
+name: Build APK
+
+# ⚠️ COQUILLE STABLE — à installer une seule fois dans .github/workflows/.
+# Toute la logique de build vit dans ci/run-build.sh (fichier hors .github/,
+# donc modifiable par l'agent) : ce workflow n'aura plus besoin d'être retouché,
+# même quand le pipeline évolue.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# contents: write = nécessaire pour attacher l'APK à la GitHub Release.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash ci/run-build.sh
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
