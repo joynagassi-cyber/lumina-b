@@ -669,6 +669,47 @@ class FinancialViewModel(
     }
 
     // ==========================================
+    // Remise à zéro (données d'essai)
+    // ==========================================
+    /**
+     * Efface les données saisies pendant les essais.
+     *
+     * @param fullReset true = tout effacer (y compris le nom de l'église, le
+     * logo et l'équipe) et repartir de l'assistant de départ ;
+     * false = vider le dossier financier en gardant l'identité et l'équipe.
+     */
+    fun wipeData(context: Context, fullReset: Boolean) {
+        viewModelScope.launch {
+            if (fullReset) {
+                repository.wipeEverything()
+                clearGeneratedFiles(context)
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _currentUser.value = null
+                _eventFlow.emit("Toutes les données ont été effacées")
+            } else {
+                repository.wipeOperationalData()
+                clearGeneratedFiles(context)
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _eventFlow.emit("Écritures, membres et budgets supprimés")
+            }
+        }
+    }
+
+    /** Supprime les rapports, échanges et justificatifs générés pendant les essais. */
+    private fun clearGeneratedFiles(context: Context) {
+        runCatching {
+            java.io.File(context.cacheDir, "reports").deleteRecursively()
+            java.io.File(context.cacheDir, "echanges").deleteRecursively()
+            java.io.File(context.filesDir, "exports").deleteRecursively()
+            java.io.File(context.filesDir, "receipts").deleteRecursively()
+        }
+    }
+
+    // ==========================================
     // Profil de l'église & préférences
     // ==========================================
     fun completeOnboarding(

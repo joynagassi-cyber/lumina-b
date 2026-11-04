@@ -61,4 +61,7 @@ interface ChurchProfileDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(profile: ChurchProfileEntity)
+
+    @Query("DELETE FROM church_profile")
+    suspend fun deleteAllProfiles()
 }

@@ -247,6 +247,82 @@ class TransactionRepository(
     }
 
     // ==========================================
+    // Remise à zéro des données d'essai
+    // ==========================================
+
+    /**
+     * Efface les données de travail : écritures, membres, budgets et caisses.
+     * Le profil de l'église, les catégories et l'équipe sont conservés.
+     * Une caisse principale vide est recréée pour que la saisie reste possible.
+     */
+    suspend fun wipeOperationalData() {
+        transactionDao.deleteAllTransactions()
+        memberDao.deleteAllMembers()
+        budgetDao.deleteAllBudgets()
+        cashRegisterDao.deleteAllCashRegisters()
+        cashRegisterDao.insertCashRegister(
+            CashRegisterEntity(
+                name = "Caisse principale",
+                description = "Caisse physique de l'église",
+                initialBalanceCents = 0L,
+                iconType = "cash",
+                isDefault = true
+            )
+        )
+    }
+
+    /**
+     * Remise à zéro complète : même chose, plus les catégories, l'équipe et
+     * l'identité de l'église. L'application repart de l'assistant de départ.
+     */
+    suspend fun wipeEverything() {
+        transactionDao.deleteAllTransactions()
+        memberDao.deleteAllMembers()
+        budgetDao.deleteAllBudgets()
+        cashRegisterDao.deleteAllCashRegisters()
+        categoryDao.deleteAllCategories()
+        userDao.deleteAllUsers()
+        churchProfileDao.deleteAllProfiles()
+        cashRegisterDao.insertCashRegister(
+            CashRegisterEntity(
+                name = "Caisse principale",
+                description = "Caisse physique de l'église",
+                initialBalanceCents = 0L,
+                iconType = "cash",
+                isDefault = true
+            )
+        )
+        ensureDefaultCategories()
+    }
+
+    /** Rétablit le plan de comptes de départ si le dossier n'en a plus. */
+    suspend fun ensureDefaultCategories() {
+        if (categoryDao.getAllCategoriesOnce().isNotEmpty()) return
+        DefaultChartOfAccounts.expenses.forEach { (name, color, icon) ->
+            categoryDao.insertCategory(
+                CategoryEntity(
+                    name = name,
+                    type = TransactionType.EXPENSE,
+                    colorHex = color,
+                    isDefault = true,
+                    iconName = icon
+                )
+            )
+        }
+        DefaultChartOfAccounts.incomes.forEach { (name, color, icon) ->
+            categoryDao.insertCategory(
+                CategoryEntity(
+                    name = name,
+                    type = TransactionType.INCOME,
+                    colorHex = color,
+                    isDefault = true,
+                    iconName = icon
+                )
+            )
+        }
+    }
+
+    // ==========================================
     // Synchronisation par fichier
     // ==========================================
     suspend fun transactionsForSync(): List<TransactionEntity> = transactionDao.getAllForSync()

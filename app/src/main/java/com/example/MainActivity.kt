@@ -727,7 +727,8 @@ fun LuminaApp(
                         onAmountDisplayModeChange = { viewModel.setAmountDisplayMode(it) },
                         onNavigateToCaisses = { currentScreen = AppScreen.CAISSES },
                         onNavigateToCategories = { showCategoryManager = true },
-                        onNavigateToExport = { currentScreen = AppScreen.EXPORT }
+                        onNavigateToExport = { currentScreen = AppScreen.EXPORT },
+                        onWipeData = { fullReset -> viewModel.wipeData(context, fullReset) }
                     )
                 }
             }

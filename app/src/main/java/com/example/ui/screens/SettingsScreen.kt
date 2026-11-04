@@ -23,15 +23,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,7 +43,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -70,9 +79,12 @@ fun SettingsScreen(
     onNavigateToCategories: () -> Unit,
     onNavigateToExport: () -> Unit,
     onEditChurchProfile: () -> Unit = {},
+    onWipeData: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    // null = pas de confirmation en cours ; false = vider le dossier ; true = tout effacer
+    var confirmWipe: Boolean? by remember { mutableStateOf(null) }
 
     Column(
         modifier = modifier
@@ -393,6 +405,69 @@ fun SettingsScreen(
             )
         }
 
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
+
+        // SECTION 6 : DONNÉES D'ESSAI
+        GroupedCard(title = "Données d'essai") {
+            ListRow(
+                title = "Effacer les écritures d'essai",
+                subtitle = "Supprime toutes les opérations, les membres, les budgets et les caisses. " +
+                    "Le nom de l'église, le logo et l'équipe sont conservés.",
+                icon = Icons.Default.DeleteSweep,
+                iconTileColor = MaterialTheme.colorScheme.errorContainer,
+                iconTint = MaterialTheme.colorScheme.error,
+                onClick = { confirmWipe = false },
+                showDivider = true,
+                modifier = Modifier.testTag("wipe_operational_row")
+            )
+
+            ListRow(
+                title = "Tout effacer et repartir de zéro",
+                subtitle = "Efface aussi le profil de l'église, le logo et l'équipe. " +
+                    "L'assistant de premier lancement réapparaît.",
+                icon = Icons.Default.RestartAlt,
+                iconTileColor = MaterialTheme.colorScheme.errorContainer,
+                iconTint = MaterialTheme.colorScheme.error,
+                onClick = { confirmWipe = true },
+                showDivider = false,
+                modifier = Modifier.testTag("wipe_all_row")
+            )
+        }
+
         Spacer(modifier = Modifier.height(80.dp))
+    }
+
+    confirmWipe?.let { full ->
+        AlertDialog(
+            onDismissRequest = { confirmWipe = null },
+            title = {
+                Text(if (full) "Tout effacer ?" else "Effacer les écritures d'essai ?")
+            },
+            text = {
+                Text(
+                    if (full) {
+                        "Le profil de l'église, l'équipe, les écritures, les membres et les budgets " +
+                            "seront définitivement supprimés de cet appareil. Cette action est irréversible."
+                    } else {
+                        "Les écritures, les membres, les budgets et les caisses seront définitivement " +
+                            "supprimés. Le profil de l'église et l'équipe restent en place. " +
+                            "Cette action est irréversible."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onWipeData(full)
+                        confirmWipe = null
+                    }
+                ) {
+                    Text(if (full) "Tout effacer" else "Effacer", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmWipe = null }) { Text("Annuler") }
+            }
+        )
     }
 }

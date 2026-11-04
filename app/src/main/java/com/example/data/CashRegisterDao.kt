@@ -42,4 +42,7 @@ interface CashRegisterDao {
 
     @Query("SELECT COUNT(*) FROM cash_registers WHERE isDeleted = 0")
     suspend fun getCount(): Int
+
+    @Query("DELETE FROM cash_registers")
+    suspend fun deleteAllCashRegisters()
 }
