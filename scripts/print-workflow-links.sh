@@ -28,7 +28,7 @@ import sys, os, urllib.parse
 
 repo, branch, out, mode = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 files = sorted(f for f in os.listdir('ci/workflows') if f.endswith('.yml'))
-order = ['android-ci.yml', 'android-release.yml', 'bootstrap-keystore.yml']
+order = ['build.yml', 'release-lite.yml', 'android-ci.yml', 'android-release.yml', 'bootstrap-keystore.yml']
 files = [f for f in order if f in files] + [f for f in files if f not in order]
 
 lines = [
