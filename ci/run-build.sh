@@ -52,10 +52,15 @@ note() { # $1 = titre, $2 = contenu -> annotation "notice" lisible par l'agent
 CURRENT_STEP=""
 CURRENT_OUT=""
 
+summarize() { # sortie de build utile : sans les trames de pile (--stacktrace)
+  grep -v -E '^[[:space:]]+at [a-zA-Z_$]' "$1" 2>/dev/null | grep -v -E '^[[:space:]]*$' \
+    | tail -n 30 || true
+}
+
 on_error() { # errexit conserve son effet dans les phases ; l'annotation porte la sortie capturée
   local rc=$? step="${CURRENT_STEP:-script}" out="${CURRENT_OUT:-}" msg=""
   set +e
-  if [ -n "$out" ] && [ -f "$out" ]; then msg=$(tail -n 40 "$out" 2>/dev/null || true); fi
+  if [ -n "$out" ] && [ -f "$out" ]; then msg=$(summarize "$out"); fi
   printf '::endgroup::\n' >&3
   printf '::error title=%s::code %s — %s\n' "$step" "$rc" "$(escape_ann "${msg:-(aucune sortie)}")" >&3
   exit "$rc"
