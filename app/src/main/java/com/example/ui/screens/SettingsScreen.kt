@@ -115,8 +115,8 @@ fun SettingsScreen(
                 .testTag("settings_system_card"),
             shape = LuminaTokens.ShapeHero,
             elevation = LuminaCardElevation.HERO,
-            backgroundBrush = LuminaTokens.HeroGradientIndigo,
-            spotShadowColor = LuminaTokens.HeroSpotShadowIndigo,
+            backgroundBrush = null,
+            spotShadowColor = null,
             ambientShadowColor = LuminaTokens.HeroAmbientShadow
         ) {
             Column(

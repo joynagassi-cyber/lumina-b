@@ -337,7 +337,14 @@ fun FinancialTimelineChart(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 // Zone de dessin Canvas interactive
-                val lineColor = MaterialTheme.colorScheme.primary
+                // Sens de la courbe : vert quand la trésorerie monte, rouge quand elle descend.
+                val cumulatives = timelinePoints.map { it.cumulativeBalanceCents }
+                val isRising = (cumulatives.lastOrNull() ?: 0L) >= (cumulatives.firstOrNull() ?: 0L)
+                val lineColor = when {
+                    chartMode != TimelineChartMode.CUMULATIVE_LINE -> MaterialTheme.colorScheme.primary
+                    isRising -> IncomeGreen
+                    else -> ExpenseRed
+                }
                 val outlineColor = MaterialTheme.colorScheme.outline
                 val surfaceVariantColor = MaterialTheme.colorScheme.surfaceVariant
 

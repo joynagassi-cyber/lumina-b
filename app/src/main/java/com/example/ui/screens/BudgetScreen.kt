@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -38,6 +38,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,15 +78,43 @@ fun BudgetScreen(
     onAddCategory: (name: String, type: com.example.data.TransactionType, colorHex: String) -> Unit,
     onUpdateCategory: (id: Long, name: String, type: com.example.data.TransactionType, colorHex: String, isDefault: Boolean) -> Unit,
     onDeleteCategory: (com.example.data.CategoryEntity) -> Unit,
+    createSignal: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var showSetBudgetDialog by remember { mutableStateOf(false) }
     var budgetToEdit by remember { mutableStateOf<CategoryBudgetProgress?>(null) }
     var showCategoryManager by remember { mutableStateOf(false) }
+    var selectedBudget by remember { mutableStateOf<CategoryBudgetProgress?>(null) }
 
+    // Le bouton flottant de l'application ouvre la création d'un budget
+    LaunchedEffect(createSignal) {
+        if (createSignal > 0) {
+            budgetToEdit = null
+            showSetBudgetDialog = true
+        }
+    }
+
+    val detail = selectedBudget
+    if (detail != null) {
+        BudgetDetailScreen(
+            item = uiState.categoryBudgetProgress.firstOrNull { it.categoryName == detail.categoryName } ?: detail,
+            transactions = uiState.periodTransactions,
+            monthLabel = uiState.budgetMonthLabel,
+            displayMode = uiState.amountDisplayMode,
+            onBack = { selectedBudget = null },
+            onEdit = { budgetToEdit = detail; showSetBudgetDialog = true },
+            onDelete = {
+                detail.budgetId?.let { onDeleteBudget(it) }
+                selectedBudget = null
+            }
+        )
+    } else {
+
+    // Une seule page, un seul plan : la synthèse défile avec les catégories.
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = LuminaTokens.SpacingDefault, vertical = LuminaTokens.SpacingMedium)
             .testTag("budget_screen")
     ) {
@@ -303,15 +332,12 @@ fun BudgetScreen(
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
-            ) {
-                items(uiState.categoryBudgetProgress, key = { it.categoryName }) { item ->
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                uiState.categoryBudgetProgress.forEach { item ->
                     CategoryBudgetCard(
                         item = item,
                         displayMode = uiState.amountDisplayMode,
+                        onOpenClick = { selectedBudget = item },
                         onEditClick = {
                             budgetToEdit = item
                             showSetBudgetDialog = true
@@ -319,11 +345,10 @@ fun BudgetScreen(
                     )
                 }
 
-                item {
-                    Spacer(modifier = Modifier.height(80.dp))
-                }
+                Spacer(modifier = Modifier.height(120.dp))
             }
         }
+    }
     }
 
     // Dialogue Définir / Modifier Budget
@@ -363,6 +388,7 @@ fun BudgetScreen(
 fun CategoryBudgetCard(
     item: CategoryBudgetProgress,
     displayMode: com.example.util.AmountDisplayMode = com.example.util.AmountDisplayMode.STANDARD,
+    onOpenClick: () -> Unit = {},
     onEditClick: () -> Unit
 ) {
     val categoryColor = parseHexColor(item.categoryColorHex)
@@ -373,6 +399,7 @@ fun CategoryBudgetCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onOpenClick() }
             .border(
                 width = LuminaTokens.BorderWidthThin,
                 color = MaterialTheme.colorScheme.outline,

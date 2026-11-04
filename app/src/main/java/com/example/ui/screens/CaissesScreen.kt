@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -42,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,13 @@ import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.designsystem.PillButton
 import com.example.ui.designsystem.SectionHeader
 import com.example.ui.designsystem.StatTrio
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import com.example.util.CurrencyFormatter
 import androidx.compose.ui.graphics.Color
 
@@ -74,16 +82,41 @@ fun CaissesScreen(
     onUpdateCaisse: (id: Long, name: String, description: String, initialBalance: Long, iconType: String, isDefault: Boolean) -> Unit,
     onDeleteCaisse: (Long) -> Unit,
     onTransferBetweenCaisses: (sourceId: Long, targetId: Long, amountCents: Long, note: String) -> Unit,
+    createSignal: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var showAddCaisseDialog by remember { mutableStateOf(false) }
     var caisseToEdit by remember { mutableStateOf<CashRegisterSummary?>(null) }
     var showTransferDialog by remember { mutableStateOf(false) }
     var caisseToDelete by remember { mutableStateOf<CashRegisterSummary?>(null) }
+    var selectedCaisse by remember { mutableStateOf<CashRegisterSummary?>(null) }
+    var transferSourceId by remember { mutableStateOf<Long?>(null) }
 
+    // Le bouton flottant de l'application ouvre la création d'une caisse
+    LaunchedEffect(createSignal) {
+        if (createSignal > 0) {
+            caisseToEdit = null
+            showAddCaisseDialog = true
+        }
+    }
+
+    val detail = selectedCaisse
+    if (detail != null) {
+        CaisseDetailScreen(
+            caisse = uiState.cashRegisterSummaries.firstOrNull { it.id == detail.id } ?: detail,
+            transactions = uiState.transactions,
+            displayMode = uiState.amountDisplayMode,
+            onBack = { selectedCaisse = null },
+            onEdit = { caisseToEdit = detail; showAddCaisseDialog = true },
+            onDelete = { caisseToDelete = detail },
+            onTransfer = { transferSourceId = detail.id; showTransferDialog = true }
+        )
+    } else {
+    // Une seule page, un seul plan : l'en-tête défile avec le reste.
     Column(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = LuminaTokens.SpacingDefault, vertical = LuminaTokens.SpacingMedium)
             .testTag("caisses_screen")
     ) {
@@ -252,17 +285,14 @@ fun CaissesScreen(
             title = "Détail des Caisses & Relevés"
         )
 
-        LazyColumn(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
-        ) {
-            items(uiState.cashRegisterSummaries, key = { it.id }) { caisse ->
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            uiState.cashRegisterSummaries.forEach { caisse ->
                 val isSelected = uiState.selectedCashRegisterId == caisse.id
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .clickable { selectedCaisse = caisse }
                         .border(
                             width = if (isSelected) LuminaTokens.BorderWidthActive else LuminaTokens.BorderWidthThin,
                             color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
@@ -406,10 +436,9 @@ fun CaissesScreen(
                 }
             }
 
-            item {
-                Spacer(modifier = Modifier.height(80.dp))
-            }
+            Spacer(modifier = Modifier.height(120.dp))
         }
+    }
     }
 
     // Dialogue Créer / Modifier Caisse
@@ -434,7 +463,8 @@ fun CaissesScreen(
     if (showTransferDialog) {
         TransferCaisseDialog(
             caisses = uiState.cashRegisterSummaries,
-            onDismissRequest = { showTransferDialog = false },
+            initialSourceId = transferSourceId,
+            onDismissRequest = { showTransferDialog = false; transferSourceId = null },
             onTransfer = { sourceId, targetId, amount, note ->
                 onTransferBetweenCaisses(sourceId, targetId, amount, note)
             }
@@ -452,6 +482,7 @@ fun CaissesScreen(
                 TextButton(
                     onClick = {
                         onDeleteCaisse(reg.id)
+                        if (selectedCaisse?.id == reg.id) selectedCaisse = null
                         caisseToDelete = null
                     }
                 ) {
@@ -600,66 +631,112 @@ fun AddEditCaisseDialog(
 @Composable
 fun TransferCaisseDialog(
     caisses: List<CashRegisterSummary>,
+    initialSourceId: Long? = null,
     onDismissRequest: () -> Unit,
     onTransfer: (sourceId: Long, targetId: Long, amountCents: Long, note: String) -> Unit
 ) {
-    var sourceId by remember { mutableStateOf(caisses.firstOrNull()?.id ?: 1L) }
-    var targetId by remember { mutableStateOf(caisses.getOrNull(1)?.id ?: caisses.firstOrNull()?.id ?: 1L) }
+    var sourceId by remember {
+        mutableStateOf(initialSourceId ?: caisses.firstOrNull()?.id ?: 1L)
+    }
+    var targetId by remember {
+        mutableStateOf(
+            caisses.firstOrNull { it.id != (initialSourceId ?: caisses.firstOrNull()?.id) }?.id
+                ?: caisses.getOrNull(1)?.id
+                ?: caisses.firstOrNull()?.id
+                ?: 1L
+        )
+    }
     var amountText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
+
+    val source = caisses.firstOrNull { it.id == sourceId }
+    val target = caisses.firstOrNull { it.id == targetId }
 
     Dialog(onDismissRequest = onDismissRequest) {
         Surface(
             shape = LuminaTokens.ShapeCard,
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
-            modifier = Modifier.fillMaxWidth(0.95f)
+            modifier = Modifier.fillMaxWidth(0.96f)
         ) {
-            Column(modifier = Modifier.padding(LuminaTokens.SpacingLarge)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 620.dp)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp)
+                    .testTag("transfer_dialog")
+            ) {
                 Text(
-                    text = "Virement Inter-Caisses",
+                    text = "Virement entre caisses",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Déplacez un montant d'une caisse à une autre, en toute traçabilité",
+                    text = "Le montant quitte une caisse et arrive dans l'autre, en une seule opération traçable.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                Spacer(modifier = Modifier.height(16.dp))
+
+                CaisseSelector(
+                    label = "Depuis la caisse",
+                    selected = source,
+                    options = caisses,
+                    onSelect = { picked ->
+                        sourceId = picked.id
+                        if (targetId == picked.id) {
+                            targetId = caisses.firstOrNull { it.id != picked.id }?.id ?: targetId
+                        }
+                        error = null
+                    },
+                    testTag = "transfer_source_selector"
+                )
+
+                // Bouton d'inversion
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(
+                        onClick = {
+                            val oldSource = sourceId
+                            sourceId = targetId
+                            targetId = oldSource
+                        },
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.SwapVert,
+                            contentDescription = "Inverser les caisses",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                CaisseSelector(
+                    label = "Vers la caisse",
+                    selected = target,
+                    options = caisses,
+                    onSelect = { picked ->
+                        targetId = picked.id
+                        if (sourceId == picked.id) {
+                            sourceId = caisses.firstOrNull { it.id != picked.id }?.id ?: sourceId
+                        }
+                        error = null
+                    },
+                    testTag = "transfer_target_selector"
+                )
+
                 Spacer(modifier = Modifier.height(14.dp))
-
-                Text("Caisse Source (Débit) :", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    caisses.forEach { caisse ->
-                        FilterChip(
-                            selected = sourceId == caisse.id,
-                            onClick = { sourceId = caisse.id },
-                            label = { Text(caisse.name, fontSize = 11.sp) },
-                            shape = LuminaTokens.ShapePill
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Text("Caisse Destinataire (Crédit) :", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    caisses.forEach { caisse ->
-                        FilterChip(
-                            selected = targetId == caisse.id,
-                            onClick = { targetId = caisse.id },
-                            label = { Text(caisse.name, fontSize = 11.sp) },
-                            shape = LuminaTokens.ShapePill
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = amountText,
@@ -669,8 +746,8 @@ fun TransferCaisseDialog(
                             error = null
                         }
                     },
-                    label = { Text("Montant à transférer (FCFA)") },
-                    placeholder = { Text("ex: 50000") },
+                    label = { Text("Montant (FCFA)") },
+                    placeholder = { Text("ex : 50 000") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier
@@ -679,53 +756,149 @@ fun TransferCaisseDialog(
                     shape = LuminaTokens.ShapeSubCard
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
-                    label = { Text("Motif / Note du virement") },
-                    placeholder = { Text("ex: Approvisionnement espèces, Dépôt Wave...") },
+                    label = { Text("Motif (optionnel)") },
+                    placeholder = { Text("Approvisionnement, dépôt…") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = LuminaTokens.ShapeSubCard
                 )
 
                 if (error != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(text = error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = error!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(18.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
+                Button(
+                    onClick = {
+                        val amount = amountText.toLongOrNull() ?: 0L
+                        when {
+                            source == null || target == null -> error = "Choisissez les deux caisses"
+                            source.id == target.id -> error = "Les deux caisses doivent être différentes"
+                            amount <= 0L -> error = "Saisissez un montant valide"
+                            source.currentBalanceCents < amount ->
+                                error = "Solde insuffisant dans « ${source.name} »"
+                            else -> {
+                                onTransfer(source.id, target.id, amount, note)
+                                onDismissRequest()
+                            }
+                        }
+                    },
+                    shape = LuminaTokens.ShapePill,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("confirm_transfer_button")
                 ) {
-                    TextButton(onClick = onDismissRequest) { Text("Annuler") }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            if (sourceId == targetId) {
-                                error = "La caisse source et la caisse cible doivent être différentes"
-                                return@Button
-                            }
-                            val amount = amountText.toLongOrNull()
-                            if (amount == null || amount <= 0L) {
-                                error = "Veuillez entrer un montant valide supérieur à 0"
-                                return@Button
-                            }
-                            onTransfer(sourceId, targetId, amount, note)
-                            onDismissRequest()
-                        },
-                        shape = LuminaTokens.ShapePill,
-                        modifier = Modifier.testTag("confirm_transfer_button")
-                    ) {
-                        Text("Transférer")
-                    }
+                    Text("Effectuer le virement", fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(
+                    onClick = onDismissRequest,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Annuler")
                 }
             }
         }
     }
 }
 
+/** Menu déroulant de sélection d'une caisse : nom, solde, et coche sur la sélection. */
+@Composable
+private fun CaisseSelector(
+    label: String,
+    selected: CashRegisterSummary?,
+    options: List<CashRegisterSummary>,
+    onSelect: (CashRegisterSummary) -> Unit,
+    testTag: String
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        Box {
+            OutlinedButton(
+                onClick = { expanded = true },
+                shape = LuminaTokens.ShapeSubCard,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(testTag)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = selected?.name ?: "Choisir une caisse",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (selected != null) {
+                        Text(
+                            text = "Solde : ${CurrencyFormatter.format(selected.currentBalanceCents)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            DropdownMenu(
+                expanded = expanded,
+                onDismissRequest = { expanded = false },
+                modifier = Modifier.fillMaxWidth(0.86f)
+            ) {
+                options.forEach { caisse ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(
+                                    text = caisse.name,
+                                    fontWeight = if (caisse.id == selected?.id) FontWeight.Bold else FontWeight.Normal
+                                )
+                                Text(
+                                    text = "Solde : ${CurrencyFormatter.format(caisse.currentBalanceCents)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            if (caisse.id == selected?.id) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        onClick = {
+                            onSelect(caisse)
+                            expanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}

@@ -507,7 +507,8 @@ fun DashboardScreen(
             CategoryDistributionCard(
                 categoryTotals = uiState.categoryIncomes,
                 title = "Origine des Entrées",
-                displayMode = uiState.amountDisplayMode
+                displayMode = uiState.amountDisplayMode,
+                isExpense = false
             )
         }
 

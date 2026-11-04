@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -100,6 +101,7 @@ import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.CategoryManagerDialog
 import com.example.ui.screens.BudgetScreen
 import com.example.ui.screens.CaissesScreen
+import com.example.ui.screens.ChurchProfileScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ExportScreen
 import com.example.ui.screens.LoginScreen
@@ -169,6 +171,9 @@ fun LuminaApp(
     var showAddDialog by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var showProfileEditor by remember { mutableStateOf(false) }
+    var showChurchProfile by remember { mutableStateOf(false) }
+    // Incrémenté à chaque appui sur le bouton flottant : chaque page ouvre sa propre création
+    var createSignal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -568,11 +573,15 @@ fun LuminaApp(
                             color = MaterialTheme.colorScheme.outline
                         ),
                         shadowElevation = 6.dp,
-                        modifier = Modifier.testTag("bottom_nav_bar")
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("bottom_nav_bar")
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 6.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             FloatingNavPillItem(
@@ -580,60 +589,77 @@ fun LuminaApp(
                                 onClick = { currentScreen = AppScreen.DASHBOARD },
                                 icon = Icons.Rounded.AccountBalanceWallet,
                                 label = "Bilan",
-                                testTag = "nav_item_dashboard"
+                                testTag = "nav_item_dashboard",
+                                modifier = Modifier.weight(1f)
                             )
                             FloatingNavPillItem(
                                 selected = currentScreen == AppScreen.CAISSES,
                                 onClick = { currentScreen = AppScreen.CAISSES },
                                 icon = Icons.Rounded.Payments,
                                 label = "Caisses",
-                                testTag = "nav_item_caisses"
+                                testTag = "nav_item_caisses",
+                                modifier = Modifier.weight(1f)
                             )
                             FloatingNavPillItem(
                                 selected = currentScreen == AppScreen.BUDGETS,
                                 onClick = { currentScreen = AppScreen.BUDGETS },
                                 icon = Icons.Rounded.PieChart,
                                 label = "Budgets",
-                                testTag = "nav_item_budgets"
+                                testTag = "nav_item_budgets",
+                                modifier = Modifier.weight(1f)
                             )
                             FloatingNavPillItem(
                                 selected = currentScreen == AppScreen.TIMELINE,
                                 onClick = { currentScreen = AppScreen.TIMELINE },
                                 icon = Icons.Rounded.ReceiptLong,
                                 label = "Historique",
-                                testTag = "nav_item_timeline"
+                                testTag = "nav_item_timeline",
+                                modifier = Modifier.weight(1f)
                             )
                             FloatingNavPillItem(
                                 selected = currentScreen == AppScreen.EXPORT,
                                 onClick = { currentScreen = AppScreen.EXPORT },
                                 icon = Icons.Rounded.Share,
                                 label = "Exports",
-                                testTag = "nav_item_export"
+                                testTag = "nav_item_export",
+                                modifier = Modifier.weight(1f)
                             )
                         }
                     }
                 }
             },
             floatingActionButton = {
-                // Lecture seule : aucune saisie possible
+                // Lecture seule : aucune création possible.
+                // Le bouton crée ce que la page affiche : caisse, budget, membre ou opération.
+                val fabLabel = when (currentScreen) {
+                    AppScreen.CAISSES -> "Caisse"
+                    AppScreen.BUDGETS -> "Budget"
+                    AppScreen.MEMBERS -> "Membre"
+                    else -> "Opération"
+                }
                 if (uiState.canWrite) FloatingActionButton(
-                    onClick = { showAddDialog = true },
+                    onClick = {
+                        when (currentScreen) {
+                            AppScreen.CAISSES, AppScreen.BUDGETS, AppScreen.MEMBERS -> createSignal++
+                            else -> showAddDialog = true
+                        }
+                    },
                     shape = com.example.ui.designsystem.LuminaTokens.ShapePill,
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.testTag("add_transaction_fab")
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 16.dp),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Ajouter une transaction",
+                            contentDescription = "Créer : $fabLabel",
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Opération", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(fabLabel, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
                 }
             }
@@ -664,7 +690,8 @@ fun LuminaApp(
                         onAddCaisse = { name, desc, bal, icon -> viewModel.addCashRegister(name, desc, bal, icon) },
                         onUpdateCaisse = { id, name, desc, bal, icon, isDef -> viewModel.updateCashRegister(id, name, desc, bal, icon, isDef) },
                         onDeleteCaisse = { id -> viewModel.deleteCashRegister(id) },
-                        onTransferBetweenCaisses = { src, tgt, amt, note -> viewModel.transferBetweenCaisses(src, tgt, amt, note) }
+                        onTransferBetweenCaisses = { src, tgt, amt, note -> viewModel.transferBetweenCaisses(src, tgt, amt, note) },
+                        createSignal = createSignal
                     )
                     AppScreen.BUDGETS -> BudgetScreen(
                         uiState = uiState,
@@ -683,7 +710,8 @@ fun LuminaApp(
                         members = uiState.members,
                         onAddMember = { viewModel.addMember(it) },
                         onUpdateMember = { viewModel.updateMember(it) },
-                        onDeleteMember = { viewModel.deleteMember(it) }
+                        onDeleteMember = { viewModel.deleteMember(it) },
+                        createSignal = createSignal
                     )
                     AppScreen.TIMELINE -> TimelineScreen(
                         uiState = uiState,
@@ -722,7 +750,7 @@ fun LuminaApp(
                     )
                     AppScreen.SETTINGS -> SettingsScreen(
                         uiState = uiState,
-                        onEditChurchProfile = { showProfileEditor = true },
+                        onEditChurchProfile = { showChurchProfile = true },
                         onThemeModeChange = { viewModel.setThemeMode(it) },
                         onAmountDisplayModeChange = { viewModel.setAmountDisplayMode(it) },
                         onNavigateToCaisses = { currentScreen = AppScreen.CAISSES },
@@ -733,6 +761,18 @@ fun LuminaApp(
                 }
             }
         }
+    }
+
+    if (showChurchProfile) {
+        ChurchProfileScreen(
+            profile = uiState.profile,
+            memberCount = uiState.members.size,
+            onBack = { showChurchProfile = false },
+            onEdit = {
+                showChurchProfile = false
+                showProfileEditor = true
+            }
+        )
     }
 
     if (showProfileEditor) {
@@ -796,48 +836,37 @@ private fun FloatingNavPillItem(
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     label: String,
-    testTag: String
+    testTag: String,
+    modifier: Modifier = Modifier
 ) {
-    val activeBg = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-    val inactiveBg = androidx.compose.ui.graphics.Color.Transparent
-    val activeBorder = androidx.compose.foundation.BorderStroke(
-        width = 1.dp,
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)
-    )
-    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+    val contentColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val background = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent
 
-    Box(
-        modifier = Modifier
-            .clip(com.example.ui.designsystem.LuminaTokens.ShapePill)
-            .background(if (selected) activeBg else inactiveBg)
-            .then(if (selected) Modifier.border(activeBorder, com.example.ui.designsystem.LuminaTokens.ShapePill) else Modifier)
+    Column(
+        modifier = modifier
+            .heightIn(min = 56.dp)
+            .clip(com.example.ui.designsystem.LuminaTokens.ShapeSubCard)
+            .background(background)
             .clickable { onClick() }
-            .padding(horizontal = if (selected) 12.dp else 10.dp, vertical = 8.dp)
+            .padding(vertical = 6.dp, horizontal = 4.dp)
             .testTag(testTag),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = contentColor,
-                modifier = Modifier.size(if (selected) 23.dp else 22.dp)
-            )
-            if (selected) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontSize = 12.sp
-                )
-            }
-        }
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = contentColor,
+            modifier = Modifier.size(24.dp)
+        )
+        Spacer(modifier = Modifier.height(3.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = contentColor,
+            fontSize = 11.sp,
+            maxLines = 1
+        )
     }
 }
-
-
