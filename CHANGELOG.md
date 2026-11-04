@@ -1,5 +1,43 @@
 # Lumina — journal des versions
 
+## v1.3.0 — une page, un plan, des fiches
+
+### Défilement unifié
+- **Caisses** et **Budgets** ne sont plus coupées en deux plans : l'en-tête, la
+  synthèse et les cartes défilent ensemble, d'un seul geste. Plus d'effet
+  « carte figée au-dessus » sur les petits écrans.
+
+### Fiches détaillées
+- **Membre** : un appui sur la carte ouvre une fiche complète (identité,
+  situation familiale, contact et résidence, vie d'église), alignée et lisible,
+  avec les boutons *Modifier* et *Retirer*. Le formulaire ne réapparaît qu'à la
+  demande.
+- **Caisse** : appui sur la carte → fiche avec solde, entrées, sorties, jauge et
+  derniers mouvements ; virement, modification et suppression au même endroit.
+- **Budget** : appui sur la carte → fiche avec plafond, consommation, reste et
+  liste des dépenses de la catégorie.
+- **Église** : Paramètres → *Profil de l'église* ouvre désormais une fiche
+  présentable (logo, identité, localisation, contacts, responsables, couleur),
+  et non plus directement le formulaire.
+
+### Bouton flottant contextuel
+- Chaque page crée ce qu'elle affiche : **Caisse** dans Caisses, **Budget** dans
+  Budgets, **Membre** dans Membres, **Opération** ailleurs.
+
+### Virement inter-caisses repensé
+- Deux menus déroulants (caisse source, caisse destinataire) avec nom et solde,
+  bouton d'inversion, dialogue défilant qui ne déborde plus. Refus si le solde
+  de la source est insuffisant.
+
+### Navigation et couleurs
+- Barre de navigation agrandie : icônes 24 px, libellés toujours visibles,
+  cibles tactiles de 56 px minimum.
+- Les **cartes d'en-tête prennent la couleur d'accent** choisie (dégradé calculé
+  à partir de teinte, plus clair en haut, plus profond en bas).
+- Graphiques : **vert** pour les entrées et les courbes ascendantes, **rouge**
+  pour les sorties et les courbes descendantes ; répartitions sémantiques par
+  type.
+
 ## v1.2.1 — nettoyage des données d'essai
 
 - Paramètres → **Données d'essai** : deux actions claires, chacune protégée par
