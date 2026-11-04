@@ -180,6 +180,11 @@ fun LuminaApp(
     // Incrémenté à chaque appui sur le bouton flottant : chaque page ouvre sa propre création
     var createSignal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var transactionToEdit by remember { mutableStateOf<com.example.data.TransactionEntity?>(null) }
+    // Sauvegarde & restauration
+    var restorePassword by remember { mutableStateOf("") }
+    var pendingRestore by remember {
+        mutableStateOf<Pair<android.net.Uri, com.example.export.BackupSnapshot>?>(null)
+    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -191,6 +196,36 @@ fun LuminaApp(
             scope.launch { drawerState.close() }
         } else {
             currentScreen = AppScreen.DASHBOARD
+        }
+    }
+
+    // Copie de secours silencieuse au démarrage (une fois par jour au plus)
+    LaunchedEffect(Unit) {
+        viewModel.runAutoBackup(context)
+    }
+    val lastAutoBackupLabel = remember(uiState.transactions.size, uiState.members.size) {
+        val file = com.example.export.BackupService.latestAutoFile(context)
+        file?.let {
+            android.text.format.DateFormat
+                .format("dd/MM/yyyy 'à' HH:mm", it.lastModified())
+                .toString()
+        } ?: ""
+    }
+
+    val restorePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            viewModel.inspectBackup(context, uri, restorePassword) { result ->
+                result.onSuccess { snapshot -> pendingRestore = uri to snapshot }
+                    .onFailure {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(
+                                it.message ?: "Sauvegarde illisible"
+                            )
+                        }
+                    }
+            }
         }
     }
 
@@ -792,7 +827,48 @@ fun LuminaApp(
                         onNavigateToExport = { currentScreen = AppScreen.EXPORT },
                         onWipeData = { fullReset -> viewModel.wipeData(context, fullReset) },
                         onClosePreviousMonth = { viewModel.closePreviousMonth() },
-                        onReopenBooks = { viewModel.reopenBooks() }
+                        onReopenBooks = { viewModel.reopenBooks() },
+                        onCreateBackup = { password ->
+                            viewModel.createBackup(context, password) { result ->
+                                result.onSuccess { export ->
+                                    com.example.export.ReportExporter.shareFile(
+                                        context,
+                                        export.file,
+                                        "application/octet-stream",
+                                        "Sauvegarde du dossier — ${uiState.profile.churchName}"
+                                    )
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            "Sauvegarde prête : ${export.snapshot.transactionCount} écritures, " +
+                                                "${export.snapshot.memberCount} membres" +
+                                                if (export.encrypted) " (protégée par mot de passe)" else ""
+                                        )
+                                    }
+                                }.onFailure {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            it.message ?: "Sauvegarde impossible"
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onRequestRestore = { password ->
+                            restorePassword = password
+                            restorePicker.launch(arrayOf("*/*"))
+                        },
+                        onRestoreAuto = {
+                            viewModel.restoreLatestAutoBackup(context) { result ->
+                                result.onFailure {
+                                    scope.launch {
+                                        snackbarHostState.showSnackbar(
+                                            it.message ?: "Aucune copie automatique"
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        lastAutoBackupLabel = lastAutoBackupLabel
                     )
                 }
             }
@@ -894,6 +970,48 @@ fun LuminaApp(
             },
             onDeleteCategory = { cat ->
                 viewModel.deleteCategory(cat)
+            }
+        )
+    }
+
+    // Confirmation avant remplacement du dossier par une sauvegarde
+    pendingRestore?.let { (uri, snapshot) ->
+        val sauvegardeLe = java.text.SimpleDateFormat("dd/MM/yyyy 'à' HH:mm", java.util.Locale.FRANCE)
+            .format(java.util.Date(snapshot.createdAt))
+        val entete = "Sauvegarde du $sauvegardeLe" +
+            if (snapshot.churchName.isNotBlank()) " — ${snapshot.churchName}" else ""
+        val contenu = entete + "\n\n" +
+            "${snapshot.transactionCount} écritures, ${snapshot.memberCount} membres, " +
+            "${snapshot.registers.size} caisses et ${snapshot.projects.size} projets.\n\n" +
+            "Les données actuellement dans l'application seront remplacées."
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingRestore = null },
+            title = { androidx.compose.material3.Text("Remplacer le dossier actuel ?") },
+            text = {
+                androidx.compose.material3.Text(contenu)
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        viewModel.restoreBackup(context, uri, restorePassword) { result ->
+                            result.onFailure {
+                                scope.launch {
+                                    snackbarHostState.showSnackbar(
+                                        it.message ?: "Restauration impossible"
+                                    )
+                                }
+                            }
+                        }
+                        pendingRestore = null
+                    }
+                ) {
+                    androidx.compose.material3.Text("Restaurer")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pendingRestore = null }) {
+                    androidx.compose.material3.Text("Annuler")
+                }
             }
         )
     }

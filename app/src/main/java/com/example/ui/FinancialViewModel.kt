@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -826,6 +827,87 @@ class FinancialViewModel(
                 _searchQuery.value = ""
                 _eventFlow.emit("Écritures, membres et budgets supprimés")
             }
+        }
+    }
+
+    // ==========================================
+    // Sauvegarde & restauration
+    // ==========================================
+
+    /** Copie silencieuse quotidienne : ne bloque jamais l'ouverture de l'app. */
+    fun runAutoBackup(context: Context) {
+        viewModelScope.launch {
+            com.example.export.BackupService.autoSnapshot(context.applicationContext, repository)
+        }
+    }
+
+    /**
+     * Prépare une sauvegarde à emporter. Le résultat est renvoyé sur le fil
+     * principal : l'écran peut alors proposer de l'enregistrer ou de l'envoyer.
+     */
+    fun createBackup(
+        context: Context,
+        password: String,
+        onResult: (Result<com.example.export.BackupService.ExportResult>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                com.example.export.BackupService.create(context.applicationContext, repository, password)
+            }
+            onResult(result)
+        }
+    }
+
+    /** Lit une sauvegarde sans rien modifier (contrôle avant remplacement). */
+    fun inspectBackup(
+        context: Context,
+        uri: android.net.Uri,
+        password: String,
+        onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                com.example.export.BackupService.inspect(context.applicationContext, uri, password)
+            }
+            onResult(result)
+        }
+    }
+
+    fun restoreBackup(
+        context: Context,
+        uri: android.net.Uri,
+        password: String,
+        onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                com.example.export.BackupService.restore(context.applicationContext, repository, uri, password)
+            }
+            if (result.isSuccess) {
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _eventFlow.emit("Dossier restauré depuis la sauvegarde")
+            }
+            onResult(result)
+        }
+    }
+
+    fun restoreLatestAutoBackup(
+        context: Context,
+        onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
+    ) {
+        viewModelScope.launch {
+            val result = runCatching {
+                com.example.export.BackupService.restoreLatestAuto(context.applicationContext, repository)
+            }
+            if (result.isSuccess) {
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _eventFlow.emit("Copie automatique restaurée")
+            }
+            onResult(result)
         }
     }
 

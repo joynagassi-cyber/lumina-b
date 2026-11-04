@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.example.export.BackupSnapshot
 import kotlinx.coroutines.flow.Flow
 
 class TransactionRepository(
@@ -378,5 +379,62 @@ class TransactionRepository(
 
     suspend fun insertCategoriesRaw(items: List<CategoryEntity>) {
         items.forEach { categoryDao.insertCategory(it) }
+    }
+
+    // ==========================================
+    // Sauvegarde et restauration du dossier
+    // ==========================================
+
+    /** Rassemble tout le dossier dans une sauvegarde unique. */
+    suspend fun snapshotAll(): BackupSnapshot = BackupSnapshot(
+        createdAt = System.currentTimeMillis(),
+        churchName = churchProfileDao.getProfile()?.churchName ?: "",
+        users = userDao.getUsers(),
+        profile = churchProfileDao.getProfile(),
+        members = memberDao.getAllForSync(),
+        categories = categoryDao.getAllForSync(),
+        budgets = budgetDao.getAllOnce(),
+        registers = cashRegisterDao.getAllForSync(),
+        projects = projectDao.getAllOnce(),
+        transactions = transactionDao.getAllForSync()
+    )
+
+    /**
+     * Remet le dossier dans l'état de la sauvegarde : les données actuelles
+     * sont d'abord effacées, puis les écritures sont réinsérées telles quelles
+     * (identifiants conservés pour que les rattachements restent valables).
+     */
+    suspend fun restoreAll(snapshot: BackupSnapshot) {
+        transactionDao.deleteAllTransactions()
+        memberDao.deleteAllMembers()
+        budgetDao.deleteAllBudgets()
+        cashRegisterDao.deleteAllCashRegisters()
+        categoryDao.deleteAllCategories()
+        projectDao.deleteAllProjects()
+
+        snapshot.categories.forEach { categoryDao.insertCategory(it) }
+        snapshot.budgets.forEach { budgetDao.insertOrUpdateBudget(it) }
+        snapshot.projects.forEach { projectDao.upsert(it) }
+        snapshot.members.forEach { memberDao.insert(it) }
+        snapshot.registers.forEach { cashRegisterDao.insertCashRegister(it) }
+        snapshot.transactions.forEach { transactionDao.insertTransaction(it) }
+
+        if (snapshot.users.isNotEmpty()) {
+            userDao.deleteAllUsers()
+            snapshot.users.forEach { userDao.upsert(it) }
+        }
+        snapshot.profile?.let { churchProfileDao.upsert(it) }
+        ensureDefaultCategories()
+        if (cashRegisterDao.getCount() == 0) {
+            cashRegisterDao.insertCashRegister(
+                CashRegisterEntity(
+                    name = "Caisse principale",
+                    description = "Caisse physique de l'église",
+                    initialBalanceCents = 0L,
+                    iconType = "cash",
+                    isDefault = true
+                )
+            )
+        }
     }
 }

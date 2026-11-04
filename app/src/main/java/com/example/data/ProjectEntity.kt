@@ -58,4 +58,8 @@ interface ProjectDao {
 
     @Query("UPDATE projects SET isDeleted = 1, updatedAt = :timestamp WHERE id = :id")
     suspend fun softDelete(id: Long, timestamp: Long)
+
+    /** Effacement réel, réservé à la restauration d'une sauvegarde. */
+    @Query("DELETE FROM projects")
+    suspend fun deleteAllProjects()
 }

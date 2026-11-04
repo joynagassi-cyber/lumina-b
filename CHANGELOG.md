@@ -1,5 +1,42 @@
 # Lumina — journal des versions
 
+## v1.6.0 — projets, fonds affectés et sauvegarde du dossier
+
+### Projets et fonds affectés
+- Nouvel écran **Projets** (menu latéral) : chaque projet porte un nom, une
+  description, un **objectif de collecte** et son état (ouvert / clôturé).
+- Chaque projet affiche **Collecté**, **Dépensé**, **Disponible** et la
+  progression vers l'objectif.
+- Une écriture peut être **rattachée à un projet** au moment de la saisie
+  (« Projet / fonds affecté »). Un don affecté ne se confond donc plus avec les
+  ressources générales.
+- Le rapport de gestion gagne la section **« 7. Fonds affectés (projets) »** :
+  objectif, collecté, dépensé et disponible par projet, avec la mention que le
+  disponible d'un projet ne peut être employé que sur ce projet.
+
+### Sauvegarde et restauration (fiabilité)
+- **Copie automatique quotidienne** : l'application conserve d'elle-même les
+  trois dernières copies du dossier, sans intervention.
+- **Sauvegarde à emporter** : Paramètres → *Sauvegarde & restauration* crée un
+  fichier que l'on enregistre où l'on veut (clé, messagerie, stockage), avec
+  **protection par mot de passe** facultative (chiffrement AES-256-GCM).
+- **Restauration** : l'application lit d'abord la sauvegarde et affiche ce
+  qu'elle contient (date, nombre d'écritures, de membres, de caisses, de
+  projets) **avant** de remplacer quoi que ce soit.
+- Les copies automatiques se restaurent en un geste, sans mot de passe.
+
+### Robustesse
+- Les calculs du tableau de bord sont désormais exécutés **hors du fil
+  d'affichage** : un gros journal ne fige plus l'interface.
+- Un incident de calcul n'arrête plus l'écran : la dernière situation connue
+  reste affichée.
+- **Tests unitaires** exécutés à chaque compilation (sauvegarde, chiffrement,
+  aller-retour du dossier) : un test rouge bloque la publication de l'APK.
+
+### Technique
+- Base de données **version 8**, migration sans perte : table `projects` et
+  colonne `transactions.projectId`.
+
 ## v1.5.0 — clôture, contre-écriture, budget réalisé
 
 ### Annulation par contre-écriture
