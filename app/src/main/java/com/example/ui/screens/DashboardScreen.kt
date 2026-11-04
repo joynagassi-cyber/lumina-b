@@ -53,6 +53,7 @@ import com.example.ui.FinancialUiState
 import com.example.ui.PeriodFilter
 import com.example.ui.components.CategoryDistributionCard
 import com.example.ui.components.FinancialSummaryCard
+import com.example.ui.components.FinancialTimelineChart
 import com.example.ui.designsystem.GroupedCard
 import com.example.ui.designsystem.IconTile
 import com.example.ui.designsystem.LuminaTokens
@@ -151,6 +152,17 @@ fun DashboardScreen(
             savingsRatePercent = uiState.savingsRatePercent,
             periodLabel = uiState.selectedPeriod.label,
             amountDisplayMode = uiState.amountDisplayMode
+        )
+
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+
+        // Visualisation interactive de la timeline financière dans la section principale
+        FinancialTimelineChart(
+            transactions = uiState.transactions,
+            title = "Dynamique des Flux • ${uiState.selectedPeriod.label}",
+            subtitle = "Inspection tactile de l'évolution financière",
+            displayMode = uiState.amountDisplayMode,
+            testTag = "dashboard_timeline_chart"
         )
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))

@@ -55,6 +55,7 @@ import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.FinancialUiState
 import com.example.ui.PeriodFilter
+import com.example.ui.components.FinancialTimelineChart
 import com.example.ui.designsystem.GroupedCard
 import com.example.ui.designsystem.HeroCard
 import com.example.ui.designsystem.IconTile
@@ -321,6 +322,17 @@ fun TimelineScreen(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // Graphique interactif de la timeline dans l'Historique
+                item(key = "timeline_chart_header") {
+                    FinancialTimelineChart(
+                        transactions = uiState.transactions,
+                        title = "Courbe des Flux • ${uiState.selectedPeriod.label}",
+                        subtitle = "Évolution continue & flux quotidiens",
+                        displayMode = uiState.amountDisplayMode,
+                        testTag = "timeline_screen_chart"
+                    )
+                }
+
                 groupedTransactions.forEach { (dateGroup, list) ->
                     item(key = "header_$dateGroup") {
                         GroupedCard(title = dateGroup) {

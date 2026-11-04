@@ -60,6 +60,9 @@ import com.example.data.CategoryEntity
 import com.example.data.TransactionType
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -159,16 +162,20 @@ fun AddTransactionDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Sélecteur Type (Entrée / Sortie)
+                // Sélecteur Type (Entrée / Sortie) avec couleurs sémantiques accessibles (Vert / Rouge)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(12.dp)),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    // Option Sortie (Dépense)
+                    val isExpense = selectedType == TransactionType.EXPENSE
+                    val isIncome = selectedType == TransactionType.INCOME
+
+                    // Option Sortie (Dépense) en rouge sémantique accessible
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -176,10 +183,10 @@ fun AddTransactionDialog(
                             .padding(4.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                if (selectedType == TransactionType.EXPENSE)
-                                    MaterialTheme.colorScheme.surface
-                                else
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                if (isExpense) ExpenseRed.copy(alpha = 0.16f) else Color.Transparent
+                            )
+                            .then(
+                                if (isExpense) Modifier.border(BorderStroke(1.5.dp, ExpenseRed), RoundedCornerShape(8.dp)) else Modifier
                             )
                             .clickable {
                                 selectedType = TransactionType.EXPENSE
@@ -192,7 +199,7 @@ fun AddTransactionDialog(
                             Icon(
                                 imageVector = Icons.Default.ArrowDownward,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurface,
+                                tint = if (isExpense) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -200,12 +207,12 @@ fun AddTransactionDialog(
                                 text = "Sortie (-)",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = if (isExpense) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
 
-                    // Option Entrée (Revenu)
+                    // Option Entrée (Revenu) en vert sémantique accessible
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -213,10 +220,10 @@ fun AddTransactionDialog(
                             .padding(4.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                if (selectedType == TransactionType.INCOME)
-                                    MaterialTheme.colorScheme.primaryContainer
-                                else
-                                    MaterialTheme.colorScheme.surfaceVariant
+                                if (isIncome) IncomeGreen.copy(alpha = 0.16f) else Color.Transparent
+                            )
+                            .then(
+                                if (isIncome) Modifier.border(BorderStroke(1.5.dp, IncomeGreen), RoundedCornerShape(8.dp)) else Modifier
                             )
                             .clickable {
                                 selectedType = TransactionType.INCOME
@@ -229,7 +236,7 @@ fun AddTransactionDialog(
                             Icon(
                                 imageVector = Icons.Default.ArrowUpward,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
+                                tint = if (isIncome) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
@@ -237,7 +244,7 @@ fun AddTransactionDialog(
                                 text = "Entrée (+)",
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = if (selectedType == TransactionType.INCOME) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (isIncome) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -269,14 +276,22 @@ fun AddTransactionDialog(
                                     imageVector = Icons.Default.Payments,
                                     contentDescription = null,
                                     modifier = Modifier.size(14.dp),
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    tint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             },
-                            label = { Text(caisse.name, fontSize = 12.sp) },
+                            label = { Text(caisse.name, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                             shape = RoundedCornerShape(8.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = MaterialTheme.colorScheme.outline,
+                                selectedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 1.5.dp
                             )
                         )
                     }
@@ -299,11 +314,12 @@ fun AddTransactionDialog(
                     prefix = {
                         Text(
                             text = if (selectedType == TransactionType.INCOME) "+ " else "- ",
-                            fontWeight = FontWeight.Bold,
-                            color = if (selectedType == TransactionType.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            fontWeight = FontWeight.Black,
+                            fontSize = 18.sp,
+                            color = if (selectedType == TransactionType.INCOME) IncomeGreen else ExpenseRed
                         )
                     },
-                    suffix = { Text("FCFA", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                    suffix = { Text("FCFA", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
@@ -314,6 +330,7 @@ fun AddTransactionDialog(
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
+
 
                 // Intitulé
                 OutlinedTextField(
@@ -380,8 +397,16 @@ fun AddTransactionDialog(
                             label = { Text(cat.name, fontSize = 12.sp) },
                             shape = RoundedCornerShape(8.dp),
                             colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                selectedLabelColor = MaterialTheme.colorScheme.onSurface
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = MaterialTheme.colorScheme.outline,
+                                selectedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 1.5.dp
                             )
                         )
                     }
@@ -390,7 +415,11 @@ fun AddTransactionDialog(
                         selected = isCustomCategorySelected,
                         onClick = { isCustomCategorySelected = true },
                         label = { Text("+ Autre", fontSize = 12.sp) },
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            selectedLabelColor = MaterialTheme.colorScheme.onSurface
+                        )
                     )
                 }
 
@@ -505,19 +534,22 @@ fun AddTransactionDialog(
                         .testTag("save_transaction_button"),
                     shape = com.example.ui.designsystem.LuminaTokens.ShapePill,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                        containerColor = if (selectedType == TransactionType.INCOME) IncomeGreen else ExpenseRed,
+                        contentColor = Color.White
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Add,
+                        imageVector = if (selectedType == TransactionType.INCOME) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(18.dp),
+                        tint = Color.White
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Enregistrer l'opération",
+                        text = if (selectedType == TransactionType.INCOME) "Enregistrer l'Entrée (+)" else "Enregistrer la Sortie (-)",
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
                 }
             }
