@@ -97,4 +97,7 @@ interface UserDao {
 
     @Query("UPDATE app_users SET lastLoginAt = :timestamp WHERE id = :id")
     suspend fun touchLastLogin(id: Long, timestamp: Long)
+
+    @Query("DELETE FROM app_users")
+    suspend fun deleteAllUsers()
 }

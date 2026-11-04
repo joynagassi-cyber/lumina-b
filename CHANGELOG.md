@@ -1,5 +1,17 @@
 # Lumina — journal des versions
 
+## v1.2.1 — nettoyage des données d'essai
+
+- Paramètres → **Données d'essai** : deux actions claires, chacune protégée par
+  une confirmation.
+  - **Effacer les écritures d'essai** : supprime opérations, membres, budgets et
+    caisses ; le nom de l'église, le logo et l'équipe restent.
+  - **Tout effacer et repartir de zéro** : supprime aussi le profil et l'équipe,
+    rétablit le plan de comptes de départ et rouvre l'assistant de premier
+    lancement.
+- Les rapports PDF/Excel générés, les fichiers d'échange et les photos de
+  justificatifs sont également supprimés du téléphone.
+
 ## v1.2.0 — plusieurs personnes, un seul dossier
 
 ### Une personne, un accès

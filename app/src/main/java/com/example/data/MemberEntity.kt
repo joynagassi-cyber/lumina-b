@@ -95,4 +95,7 @@ interface MemberDao {
 
     @Query("SELECT COUNT(*) FROM members WHERE isDeleted = 0")
     suspend fun count(): Int
+
+    @Query("DELETE FROM members")
+    suspend fun deleteAllMembers()
 }

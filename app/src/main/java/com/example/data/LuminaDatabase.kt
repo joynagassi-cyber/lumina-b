@@ -130,29 +130,8 @@ abstract class LuminaDatabase : RoomDatabase() {
         private suspend fun seedBaseData(database: LuminaDatabase) {
             if (database.categoryDao().getAllCategoriesOnce().isNotEmpty()) return
 
-            val expenses = listOf(
-                Triple("Salaires & indemnités", "#3730A3", ""),
-                Triple("Loyer & charges", "#4338CA", ""),
-                Triple("Électricité & eau", "#4F46E5", ""),
-                Triple("Entretien & réparations", "#6366F1", ""),
-                Triple("Équipement & matériel", "#818CF8", ""),
-                Triple("Transport & carburant", "#52525B", ""),
-                Triple("Aide sociale & diaconie", "#71717A", ""),
-                Triple("Missions & évangélisation", "#3F3F46", ""),
-                Triple("Communication & internet", "#27272A", ""),
-                Triple("Fournitures de bureau", "#57534E", ""),
-                Triple("Restauration & accueil", "#78716C", ""),
-                Triple("Autres sorties", "#A1A1AA", "")
-            )
-            val incomes = listOf(
-                Triple("Dîmes", "#1E1B4B", ""),
-                Triple("Offrandes", "#3730A3", ""),
-                Triple("Dons spéciaux", "#4338CA", ""),
-                Triple("Projets & constructions", "#4F46E5", ""),
-                Triple("Vente d'objets & littérature", "#6366F1", ""),
-                Triple("Subventions & partenariats", "#818CF8", ""),
-                Triple("Autres entrées", "#A1A1AA", "")
-            )
+            val expenses = DefaultChartOfAccounts.expenses
+            val incomes = DefaultChartOfAccounts.incomes
 
             for ((name, color, icon) in expenses) {
                 database.categoryDao().insertCategory(
