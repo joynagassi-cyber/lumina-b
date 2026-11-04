@@ -615,7 +615,8 @@ fun LuminaApp(
                 }
             },
             floatingActionButton = {
-                FloatingActionButton(
+                // Lecture seule : aucune saisie possible
+                if (uiState.canWrite) FloatingActionButton(
                     onClick = { showAddDialog = true },
                     shape = com.example.ui.designsystem.LuminaTokens.ShapePill,
                     containerColor = MaterialTheme.colorScheme.primary,

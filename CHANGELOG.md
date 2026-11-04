@@ -1,5 +1,38 @@
 # Lumina — journal des versions
 
+## v1.2.0 — plusieurs personnes, un seul dossier
+
+### Une personne, un accès
+- Au premier lancement (et à chaque ouverture), l'application demande **qui**
+  l'utilise : chaque personne de l'équipe choisit son nom et saisit son code
+  PIN. Le premier accès créé est celui du trésorier.
+- Trois profils : **Trésorier** (tout gérer, y compris l'équipe),
+  **Assistant** (saisir et corriger, sans supprimer ni gérer l'équipe),
+  **Lecture seule** (consulter et exporter : pasteur, commission de contrôle).
+- Le code n'est jamais conservé en clair : seuls un sel aléatoire et son
+  empreinte sont enregistrés sur l'appareil.
+- Chaque écriture retient **l'auteur de la saisie**, visible dans l'historique.
+
+### Échange entre appareils, sans internet
+- Nouvel écran **Équipe & partage** : exporter le dossier dans un fichier
+  `.lumina` protégé par une phrase de passe, l'envoyer (WhatsApp, Bluetooth,
+  câble, clé USB), puis l'importer sur un autre téléphone.
+- Le fichier est **chiffré** (AES-256-GCM, clé dérivée par PBKDF2) : illisible
+  sans la phrase de passe, et inutilisable si elle est fausse.
+- La fusion est **déterministe** : chaque écriture, membre, caisse et catégorie
+  porte une identité stable ; en cas de doublon, la version la plus récemment
+  modifiée l'emporte. Rien n'est écrasé, rien n'est dupliqué.
+- Après import, un **rapport de fusion** indique précisément ce qui a été
+  ajouté, mis à jour ou déjà présent.
+- Les **suppressions voyagent aussi** : une écriture supprimée sur un téléphone
+  disparaît partout, sans casser les soldes.
+- Les personnes et leurs codes PIN **ne quittent jamais l'appareil**.
+
+### Mise à jour sans perte
+- Migration de la base vers la nouvelle structure **sans effacer** les données
+  déjà saisies : écritures, caisses, catégories, budgets, membres et profil
+  sont conservés et reçoivent une identité stable.
+
 ## v1.1.0 — refonte de la gestion financière d'église
 
 ### Onboarding et identité

@@ -501,6 +501,22 @@ class FinancialViewModel(
         _selectedCashRegisterId.value = null
     }
 
+    /** Contrôle des droits avant toute modification des données. */
+    private suspend fun ensurePermission(needDelete: Boolean = false): Boolean {
+        val role = _currentUser.value?.roleValue ?: return true
+        return when {
+            needDelete && !role.canDelete -> {
+                _eventFlow.emit("Votre profil ne permet pas de supprimer une écriture")
+                false
+            }
+            !role.canWrite -> {
+                _eventFlow.emit("Votre profil est en lecture seule")
+                false
+            }
+            else -> true
+        }
+    }
+
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
     // ==========================================
@@ -640,6 +656,7 @@ class FinancialViewModel(
 
     fun importSyncFile(context: Context, uri: android.net.Uri, passphrase: String) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             try {
                 val report = SyncManager.importFile(context, repository, uri, passphrase)
                 val message = "Fusion avec ${report.sourceChurch.ifBlank { "un autre appareil" }} : ${report.summary()}"
@@ -741,6 +758,7 @@ class FinancialViewModel(
     // ==========================================
     fun addMember(member: MemberEntity) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             if (member.firstName.isBlank() || member.lastName.isBlank()) {
                 _eventFlow.emit("Le prénom et le nom sont obligatoires")
                 return@launch
@@ -752,6 +770,7 @@ class FinancialViewModel(
 
     fun updateMember(member: MemberEntity) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             if (member.firstName.isBlank() || member.lastName.isBlank()) {
                 _eventFlow.emit("Le prénom et le nom sont obligatoires")
                 return@launch
@@ -763,6 +782,7 @@ class FinancialViewModel(
 
     fun deleteMember(member: MemberEntity) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             repository.deleteMember(member)
             _eventFlow.emit("${member.fullName} retiré(e) du registre")
         }
@@ -782,6 +802,7 @@ class FinancialViewModel(
 
     fun saveBudget(categoryName: String, amountCents: Long) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val monthKey = monthFormat.format(_currentBudgetCalendar.value.time)
             repository.saveBudget(categoryName, amountCents, monthKey)
             _eventFlow.emit("Plafond de ${CurrencyFormatter.format(amountCents)} défini pour \"$categoryName\"")
@@ -790,6 +811,7 @@ class FinancialViewModel(
 
     fun deleteBudget(id: Long) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             repository.deleteBudget(id)
             _eventFlow.emit("Budget supprimé")
         }
@@ -800,6 +822,7 @@ class FinancialViewModel(
     // ==========================================
     fun addCashRegister(name: String, description: String, initialBalanceCents: Long, iconType: String) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val entity = CashRegisterEntity(
                 name = name.trim(),
                 description = description.trim(),
@@ -821,6 +844,7 @@ class FinancialViewModel(
         isDefault: Boolean
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val entity = CashRegisterEntity(
                 id = id,
                 name = name.trim(),
@@ -836,6 +860,7 @@ class FinancialViewModel(
 
     fun deleteCashRegister(id: Long) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             val reg = repository.getCashRegisterById(id)
             if (reg != null) {
                 if (reg.isDefault) {
@@ -868,6 +893,7 @@ class FinancialViewModel(
         timestamp: Long = System.currentTimeMillis()
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             if (sourceId == targetId) {
                 _eventFlow.emit("La caisse de départ et la caisse d'arrivée doivent être différentes")
                 return@launch
@@ -938,6 +964,7 @@ class FinancialViewModel(
     /** Supprime un virement complet (les deux écritures) ou une opération simple. */
     fun deleteTransaction(id: Long) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             val tx = repository.getTransactionById(id)
             if (tx != null && tx.isTransfer) {
                 repository.deleteByTransferGroup(tx.transferGroupId)
@@ -954,6 +981,7 @@ class FinancialViewModel(
     // ==========================================
     fun addCategory(name: String, type: TransactionType, colorHex: String) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val trimmedName = name.trim()
             if (trimmedName.isBlank()) return@launch
             repository.insertCategory(
@@ -970,6 +998,7 @@ class FinancialViewModel(
 
     fun updateCategory(id: Long, name: String, type: TransactionType, colorHex: String, isDefault: Boolean) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val trimmedName = name.trim()
             if (trimmedName.isBlank()) return@launch
             val previous = repository.getCategoryById(id)
@@ -992,6 +1021,7 @@ class FinancialViewModel(
 
     fun deleteCategory(category: CategoryEntity) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             repository.deleteCategory(category)
             repository.deleteBudgetByCategory(category.name)
             _eventFlow.emit("Catégorie \"${category.name}\" supprimée")
