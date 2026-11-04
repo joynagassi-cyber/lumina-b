@@ -1,0 +1,526 @@
+package com.example.ui.components
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.example.data.CashRegisterEntity
+import com.example.data.CategoryEntity
+import com.example.data.TransactionType
+import com.example.ui.theme.ExpenseRed
+import com.example.ui.theme.IncomeGreen
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun AddTransactionDialog(
+    categories: List<CategoryEntity> = emptyList(),
+    cashRegisters: List<CashRegisterEntity> = emptyList(),
+    defaultCashRegisterId: Long? = null,
+    onDismissRequest: () -> Unit,
+    onOpenCategoryManager: () -> Unit = {},
+    onSaveTransaction: (
+        title: String,
+        type: TransactionType,
+        amountCents: Long,
+        category: String,
+        timestamp: Long,
+        note: String,
+        cashRegisterId: Long,
+        cashRegisterName: String
+    ) -> Unit
+) {
+    var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    var amountText by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+
+    val filteredCategories = remember(categories, selectedType) {
+        categories.filter { it.type == selectedType }
+    }
+
+    var selectedCategory by remember {
+        mutableStateOf(filteredCategories.firstOrNull()?.name ?: if (selectedType == TransactionType.INCOME) "Salaire" else "Alimentation")
+    }
+
+    LaunchedEffect(selectedType, filteredCategories) {
+        if (filteredCategories.none { it.name == selectedCategory }) {
+            selectedCategory = filteredCategories.firstOrNull()?.name ?: if (selectedType == TransactionType.INCOME) "Salaire" else "Alimentation"
+        }
+    }
+
+    // Sélection de la caisse
+    var selectedRegisterId by remember {
+        val initialId = defaultCashRegisterId ?: cashRegisters.firstOrNull()?.id ?: 1L
+        mutableLongStateOf(initialId)
+    }
+
+    var customCategory by remember { mutableStateOf("") }
+    var isCustomCategorySelected by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf("") }
+    var selectedTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
+
+    Dialog(
+        onDismissRequest = onDismissRequest,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .heightIn(max = 700.dp),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // En-tête
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Nouvelle Opération",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    IconButton(
+                        onClick = onDismissRequest,
+                        modifier = Modifier.testTag("cancel_transaction_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Fermer le dialogue",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Sélecteur Type (Entrée / Sortie)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // Option Sortie (Dépense)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selectedType == TransactionType.EXPENSE)
+                                    MaterialTheme.colorScheme.surface
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable {
+                                selectedType = TransactionType.EXPENSE
+                                isCustomCategorySelected = false
+                            }
+                            .testTag("type_expense_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowDownward,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Sortie (-)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Option Entrée (Revenu)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (selectedType == TransactionType.INCOME)
+                                    MaterialTheme.colorScheme.primaryContainer
+                                else
+                                    MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            .clickable {
+                                selectedType = TransactionType.INCOME
+                                isCustomCategorySelected = false
+                            }
+                            .testTag("type_income_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowUpward,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Entrée (+)",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (selectedType == TransactionType.INCOME) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Sélecteur de Caisse associée (Transparence par caisse)
+                Text(
+                    text = "Caisse de destination / prélèvement :",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    cashRegisters.forEach { caisse ->
+                        val isSelected = selectedRegisterId == caisse.id
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { selectedRegisterId = caisse.id },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Default.Payments,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            label = { Text(caisse.name, fontSize = 12.sp) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Champ Montant en FCFA
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { input ->
+                        val filtered = input.replace(" ", "").replace(',', '.')
+                        if (filtered.count { it == '.' } <= 1 && filtered.all { it.isDigit() || it == '.' }) {
+                            amountText = filtered
+                            errorMessage = null
+                        }
+                    },
+                    label = { Text("Montant (FCFA)") },
+                    placeholder = { Text("ex: 25000") },
+                    prefix = {
+                        Text(
+                            text = if (selectedType == TransactionType.INCOME) "+ " else "- ",
+                            fontWeight = FontWeight.Bold,
+                            color = if (selectedType == TransactionType.INCOME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    suffix = { Text("FCFA", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("amount_input"),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Intitulé
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = {
+                        title = it
+                        errorMessage = null
+                    },
+                    label = { Text("Intitulé / Motif") },
+                    placeholder = { Text(if (selectedType == TransactionType.INCOME) "ex: Salaire, Prestation, Virement..." else "ex: Carburant, Vivres marché, SODECI...") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("title_input"),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Section Catégories
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Catégorie",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    TextButton(onClick = onOpenCategoryManager) {
+                        Icon(imageVector = Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Gérer", fontSize = 11.sp)
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    filteredCategories.forEach { cat ->
+                        val isSelected = !isCustomCategorySelected && selectedCategory == cat.name
+                        val dotColor = parseHexColor(cat.colorHex)
+
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                selectedCategory = cat.name
+                                isCustomCategorySelected = false
+                            },
+                            leadingIcon = {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .clip(CircleShape)
+                                        .background(dotColor)
+                                )
+                            },
+                            label = { Text(cat.name, fontSize = 12.sp) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        )
+                    }
+
+                    FilterChip(
+                        selected = isCustomCategorySelected,
+                        onClick = { isCustomCategorySelected = true },
+                        label = { Text("+ Autre", fontSize = 12.sp) },
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                }
+
+                if (isCustomCategorySelected) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = customCategory,
+                        onValueChange = { customCategory = it },
+                        label = { Text("Nom de la catégorie") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Raccourcis Date
+                Text(
+                    text = "Date de l'opération : ${dateFormat.format(Date(selectedTimestamp))}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val now = System.currentTimeMillis()
+                    val dayMillis = 24 * 60 * 60 * 1000L
+
+                    TextButton(
+                        onClick = { selectedTimestamp = now },
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (selectedTimestamp >= now - (dayMillis / 2)) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+                        Text("Aujourd'hui", fontSize = 12.sp)
+                    }
+
+                    TextButton(
+                        onClick = { selectedTimestamp = now - dayMillis },
+                        colors = ButtonDefaults.textButtonColors(
+                            containerColor = if (selectedTimestamp in (now - (dayMillis * 2))..(now - (dayMillis / 2))) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+                        Text("Hier", fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Note / Mémo
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note facultative") },
+                    placeholder = { Text("Détails supplémentaires...") },
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                // Message d'erreur
+                if (errorMessage != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Bouton Enregistrer
+                Button(
+                    onClick = {
+                        val parsedAmount = amountText.toDoubleOrNull()
+                        if (parsedAmount == null || parsedAmount <= 0.0) {
+                            errorMessage = "Veuillez saisir un montant valide en FCFA supérieur à 0."
+                            return@Button
+                        }
+                        if (title.isBlank()) {
+                            errorMessage = "Veuillez saisir un intitulé pour l'opération."
+                            return@Button
+                        }
+
+                        val amountLong = Math.round(parsedAmount)
+                        val finalCategory = if (isCustomCategorySelected && customCategory.isNotBlank()) {
+                            customCategory.trim()
+                        } else {
+                            selectedCategory
+                        }
+
+                        val chosenRegister = cashRegisters.find { it.id == selectedRegisterId }
+                        val regName = chosenRegister?.name ?: "Caisse Espèces"
+
+                        onSaveTransaction(
+                            title,
+                            selectedType,
+                            amountLong,
+                            finalCategory,
+                            selectedTimestamp,
+                            note,
+                            selectedRegisterId,
+                            regName
+                        )
+                        onDismissRequest()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp)
+                        .testTag("save_transaction_button"),
+                    shape = com.example.ui.designsystem.LuminaTokens.ShapePill,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Enregistrer l'opération",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Remix Lumina-beta",
+  "description": "Application de gestion financière minimaliste et déterministe avec budgets périodiques, catégories personnalisées, bilan, timeline et exports PDF/Excel",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

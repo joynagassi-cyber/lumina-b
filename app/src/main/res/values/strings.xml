@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">Lumina-beta</string>
+    <string name="dashboard_title">Bilan Financier</string>
+    <string name="timeline_title">Historique</string>
+    <string name="export_title">Rapports &amp; Exports</string>
+    <string name="add_transaction">Nouvelle opération</string>
+    <string name="net_balance">Solde Net</string>
+    <string name="total_income">Total Entrées</string>
+    <string name="total_expense">Total Sorties</string>
+    <string name="savings_rate">Taux d\'épargne</string>
+</resources>
