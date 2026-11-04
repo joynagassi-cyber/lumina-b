@@ -8,8 +8,25 @@ class TransactionRepository(
     private val budgetDao: BudgetDao,
     private val cashRegisterDao: CashRegisterDao,
     private val churchProfileDao: ChurchProfileDao,
-    private val memberDao: MemberDao
+    private val memberDao: MemberDao,
+    private val userDao: UserDao
 ) {
+    // ==========================================
+    // Utilisateurs de l'appareil (rôles & PIN)
+    // ==========================================
+    val allUsers: Flow<List<UserEntity>> = userDao.observeUsers()
+
+    suspend fun getUsers(): List<UserEntity> = userDao.getUsers()
+
+    suspend fun getUserById(id: Long): UserEntity? = userDao.getById(id)
+
+    suspend fun getUsersCount(): Int = userDao.count()
+
+    suspend fun saveUser(user: UserEntity): Long = userDao.upsert(user)
+
+    suspend fun deleteUser(id: Long) = userDao.softDelete(id, System.currentTimeMillis())
+
+    suspend fun touchUserLogin(id: Long) = userDao.touchLastLogin(id, System.currentTimeMillis())
     // ==========================================
     // Identité de l'église (profil local)
     // ==========================================
@@ -28,9 +45,9 @@ class TransactionRepository(
 
     suspend fun updateMember(member: MemberEntity) = memberDao.update(member)
 
-    suspend fun deleteMember(member: MemberEntity) = memberDao.delete(member)
+    suspend fun deleteMember(member: MemberEntity) = memberDao.softDeleteById(member.id, System.currentTimeMillis())
 
-    suspend fun deleteMemberById(id: Long) = memberDao.deleteById(id)
+    suspend fun deleteMemberById(id: Long) = memberDao.softDeleteById(id, System.currentTimeMillis())
 
     suspend fun getMember(id: Long): MemberEntity? = memberDao.getById(id)
     // ==========================================
@@ -78,12 +95,12 @@ class TransactionRepository(
         transactionDao.deleteTransaction(transaction)
     }
 
-    suspend fun deleteById(id: Long) {
-        transactionDao.deleteById(id)
+    suspend fun deleteById(id: Long, author: String = "") {
+        transactionDao.softDeleteById(id, System.currentTimeMillis(), author)
     }
 
-    suspend fun deleteByTransferGroup(groupId: String) {
-        transactionDao.deleteByTransferGroup(groupId)
+    suspend fun deleteByTransferGroup(groupId: String, author: String = "") {
+        transactionDao.softDeleteByTransferGroup(groupId, System.currentTimeMillis(), author)
     }
 
     suspend fun renameCategoryEverywhere(oldName: String, newName: String) {
@@ -220,9 +237,47 @@ class TransactionRepository(
 
     suspend fun getCashRegisterCount(): Int = cashRegisterDao.getCount()
 
+    suspend fun getCashRegistersOnce(): List<CashRegisterEntity> = cashRegisterDao.getAllOnce()
+
     /** Supprime une caisse et ses écritures pour ne jamais laisser d'orphelines. */
     suspend fun deleteCashRegisterAndTransactions(id: Long) {
-        transactionDao.deleteByCashRegister(id)
-        cashRegisterDao.deleteById(id)
+        val now = System.currentTimeMillis()
+        transactionDao.softDeleteByCashRegister(id, now, "")
+        cashRegisterDao.softDeleteById(id, now)
+    }
+
+    // ==========================================
+    // Synchronisation par fichier
+    // ==========================================
+    suspend fun transactionsForSync(): List<TransactionEntity> = transactionDao.getAllForSync()
+
+    suspend fun membersForSync(): List<MemberEntity> = memberDao.getAllForSync()
+
+    suspend fun registersForSync(): List<CashRegisterEntity> = cashRegisterDao.getAllForSync()
+
+    suspend fun categoriesForSync(): List<CategoryEntity> = categoryDao.getAllForSync()
+
+    suspend fun transactionByUid(uid: String): TransactionEntity? = transactionDao.getByUid(uid)
+
+    suspend fun memberByUid(uid: String): MemberEntity? = memberDao.getByUid(uid)
+
+    suspend fun registerByUid(uid: String): CashRegisterEntity? = cashRegisterDao.getByUid(uid)
+
+    suspend fun categoryByUid(uid: String): CategoryEntity? = categoryDao.getByUid(uid)
+
+    suspend fun insertTransactionsRaw(items: List<TransactionEntity>) {
+        transactionDao.insertTransactions(items)
+    }
+
+    suspend fun insertMembersRaw(items: List<MemberEntity>) {
+        items.forEach { memberDao.insert(it) }
+    }
+
+    suspend fun insertRegistersRaw(items: List<CashRegisterEntity>) {
+        items.forEach { cashRegisterDao.insertCashRegister(it) }
+    }
+
+    suspend fun insertCategoriesRaw(items: List<CategoryEntity>) {
+        items.forEach { categoryDao.insertCategory(it) }
     }
 }

@@ -1,0 +1,402 @@
+package com.example.ui.screens
+
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.data.UserEntity
+import com.example.data.UserRole
+import com.example.ui.FinancialUiState
+import com.example.ui.designsystem.LuminaTokens
+
+/**
+ * Écran « Équipe & échange » : gestion des personnes autorisées sur l'appareil
+ * et transfert des données par fichier chiffré.
+ */
+@Composable
+fun TeamSyncScreen(
+    uiState: FinancialUiState,
+    onAddUser: (String, UserRole, String) -> Unit,
+    onUpdateUser: (UserEntity, String, UserRole, String) -> Unit,
+    onDeleteUser: (UserEntity) -> Unit,
+    onExport: (Context, String, (java.io.File) -> Unit) -> Unit,
+    onImport: (Context, android.net.Uri, String) -> Unit,
+    onShareFile: (Context, java.io.File) -> Unit,
+    onLogout: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var editing by remember { mutableStateOf<UserEntity?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf<UserEntity?>(null) }
+    var passphrase by remember { mutableStateOf("") }
+    var pendingImport by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) pendingImport = uri }
+
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+            .testTag("team_sync_screen")
+    ) {
+        // -------------------------------------------------
+        // Section 1 : l'équipe
+        // -------------------------------------------------
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Équipe", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(
+                    text = "${uiState.users.size} personne(s) autorisée(s) sur cet appareil",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (uiState.canManageUsers) {
+                Button(
+                    onClick = { creating = true },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.testTag("add_user_button")
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Ajouter")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        uiState.users.forEach { user ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                shape = LuminaTokens.ShapeSubCard,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = user.initials,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(user.displayName, fontWeight = FontWeight.Bold)
+                            if (uiState.currentUser?.id == user.id) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text("vous", style = MaterialTheme.typography.labelSmall) }
+                                )
+                            }
+                        }
+                        Text(
+                            text = buildString {
+                                append(user.roleValue.label)
+                                if (!user.hasPin) append(" • sans code")
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (uiState.canManageUsers) {
+                        IconButton(onClick = { editing = user }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Modifier ${user.displayName}", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = { deleting = user }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Retirer ${user.displayName}",
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Trésorier : tout gérer.  Assistant : saisir et corriger, sans gérer l'équipe.  " +
+                "Lecture : consulter et exporter uniquement.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+        HorizontalDivider()
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // -------------------------------------------------
+        // Section 2 : échange de données
+        // -------------------------------------------------
+        Text("Échange entre appareils", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = "Un fichier chiffré est produit ici, puis ouvert sur l'autre téléphone. " +
+                "Les écritures sont fusionnées : rien n'est écrasé, les plus récentes gagnent.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = passphrase,
+            onValueChange = { passphrase = it },
+            label = { Text("Phrase de passe commune (6 caractères minimum)") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            modifier = Modifier.fillMaxWidth().testTag("sync_passphrase")
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Button(
+                onClick = {
+                    onExport(context, passphrase) { file -> onShareFile(context, file) }
+                },
+                enabled = passphrase.length >= 6,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).testTag("sync_export")
+            ) {
+                Icon(Icons.Default.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Exporter")
+            }
+            OutlinedButton(
+                onClick = { importLauncher.launch(arrayOf("*/*")) },
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.weight(1f).testTag("sync_import")
+            ) {
+                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Importer")
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Seuls l'église, les caisses, les catégories, les écritures et les membres voyagent. " +
+                "Les personnes et leurs codes restent sur chaque appareil.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedButton(
+            onClick = onLogout,
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().testTag("logout_button")
+        ) {
+            Icon(Icons.Default.Logout, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("Fermer ma session")
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+
+    // ------- Dialogue création -------
+    if (creating) {
+        UserDialog(
+            title = "Nouvelle personne",
+            initial = null,
+            onDismiss = { creating = false },
+            onConfirm = { name, role, pin ->
+                onAddUser(name, role, pin)
+                creating = false
+            }
+        )
+    }
+
+    // ------- Dialogue édition -------
+    editing?.let { user ->
+        UserDialog(
+            title = "Modifier ${user.displayName}",
+            initial = user,
+            onDismiss = { editing = null },
+            onConfirm = { name, role, pin ->
+                onUpdateUser(user, name, role, pin)
+                editing = null
+            }
+        )
+    }
+
+    // ------- Confirmation suppression -------
+    deleting?.let { user ->
+        AlertDialog(
+            onDismissRequest = { deleting = null },
+            title = { Text("Retirer ${user.displayName} ?") },
+            text = { Text("La personne ne pourra plus ouvrir l'application sur cet appareil. Les écritures déjà saisies restent intactes.") },
+            confirmButton = {
+                TextButton(onClick = { onDeleteUser(user); deleting = null }) { Text("Retirer") }
+            },
+            dismissButton = { TextButton(onClick = { deleting = null }) { Text("Annuler") } }
+        )
+    }
+
+    // ------- Saisie de la phrase de passe pour importer -------
+    pendingImport?.let { uri ->
+        AlertDialog(
+            onDismissRequest = { pendingImport = null },
+            title = { Text("Ouvrir le fichier d'échange") },
+            text = {
+                Column {
+                    Text("Saisissez la phrase de passe utilisée lors de l'export.")
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = passphrase,
+                        onValueChange = { passphrase = it },
+                        label = { Text("Phrase de passe") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onImport(context, uri, passphrase)
+                        pendingImport = null
+                    }
+                ) { Text("Fusionner") }
+            },
+            dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("Annuler") } }
+        )
+    }
+}
+
+@Composable
+private fun UserDialog(
+    title: String,
+    initial: UserEntity?,
+    onDismiss: () -> Unit,
+    onConfirm: (String, UserRole, String) -> Unit
+) {
+    var name by remember { mutableStateOf(initial?.displayName ?: "") }
+    var role by remember { mutableStateOf(initial?.roleValue ?: UserRole.TRESORIER) }
+    var pin by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Nom et prénom") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("user_name_field")
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                Text("Rôle", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    UserRole.entries.forEach { candidate ->
+                        FilterChip(
+                            selected = role == candidate,
+                            onClick = { role = candidate },
+                            label = { Text(candidate.label, style = MaterialTheme.typography.labelSmall) }
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = pin,
+                    onValueChange = { pin = it.filter { c -> c.isDigit() }.take(6) },
+                    label = { Text(if (initial == null) "Code PIN (optionnel)" else "Nouveau code (laisser vide pour conserver)") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (name.isNotBlank()) onConfirm(name, role, pin) },
+                enabled = name.isNotBlank()
+            ) { Text("Enregistrer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+    )
+}

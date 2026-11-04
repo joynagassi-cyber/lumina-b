@@ -11,5 +11,8 @@ data class CashRegisterEntity(
     val description: String = "",
     val initialBalanceCents: Long = 0L, // Solde initial en FCFA
     val iconType: String = "cash", // "cash", "mobile", "bank", "vault"
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val uid: String = java.util.UUID.randomUUID().toString(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isDeleted: Boolean = false
 )

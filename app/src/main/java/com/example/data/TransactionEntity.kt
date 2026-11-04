@@ -37,7 +37,14 @@ data class TransactionEntity(
      */
     val transferGroupId: String = "",
     /** Photo ou scan du justificatif (facture, reçu), optionnel. */
-    val receiptPhotoUri: String = ""
+    val receiptPhotoUri: String = "",
+    /** Identité stable entre appareils (fusion lors des échanges de fichiers). */
+    val uid: String = java.util.UUID.randomUUID().toString(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    /** Auteur de la saisie (ou de la dernière modification). */
+    val updatedBy: String = "",
+    /** Suppression logique : l'écriture reste dans le journal pour la fusion. */
+    val isDeleted: Boolean = false
 ) {
     val amountFormatted: String
         get() = CurrencyFormatter.format(amountCents)

@@ -39,7 +39,10 @@ data class MemberEntity(
     val profession: String = "",
     val notes: String = "",
     val joinedAt: Long = System.currentTimeMillis(),
-    val isActive: Boolean = true
+    val isActive: Boolean = true,
+    val uid: String = java.util.UUID.randomUUID().toString(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isDeleted: Boolean = false
 ) {
     val fullName: String
         get() = listOf(firstName.trim(), lastName.trim())
@@ -63,8 +66,17 @@ data class MemberEntity(
 
 @Dao
 interface MemberDao {
-    @Query("SELECT * FROM members ORDER BY lastName COLLATE NOCASE ASC, firstName COLLATE NOCASE ASC")
+    @Query("SELECT * FROM members WHERE isDeleted = 0 ORDER BY lastName COLLATE NOCASE ASC, firstName COLLATE NOCASE ASC")
     fun observeMembers(): Flow<List<MemberEntity>>
+
+    @Query("SELECT * FROM members WHERE uid = :uid LIMIT 1")
+    suspend fun getByUid(uid: String): MemberEntity?
+
+    @Query("SELECT * FROM members")
+    suspend fun getAllForSync(): List<MemberEntity>
+
+    @Query("UPDATE members SET isDeleted = 1, updatedAt = :timestamp WHERE id = :id")
+    suspend fun softDeleteById(id: Long, timestamp: Long)
 
     @Query("SELECT * FROM members WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): MemberEntity?
@@ -81,6 +93,6 @@ interface MemberDao {
     @Query("DELETE FROM members WHERE id = :id")
     suspend fun deleteById(id: Long)
 
-    @Query("SELECT COUNT(*) FROM members")
+    @Query("SELECT COUNT(*) FROM members WHERE isDeleted = 0")
     suspend fun count(): Int
 }
