@@ -25,6 +25,10 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
 
+# fd 3 = stdout d'origine : les annotations doivent y être écrites même quand
+# la phase en cours a redirigé sa sortie vers un fichier de capture.
+exec 3>&1
+
 log() { printf '\n\033[1m▶ %s\033[0m\n' "$*"; }
 
 # --- Plomberie d'échec -------------------------------------------------------
@@ -45,24 +49,36 @@ note() { # $1 = titre, $2 = contenu -> annotation "notice" lisible par l'agent
   echo "::notice title=${1}::$(escape_ann "${2:-}")"
 }
 
+CURRENT_STEP=""
+CURRENT_OUT=""
+
+on_error() { # errexit conserve son effet dans les phases ; l'annotation porte la sortie capturée
+  local rc=$? step="${CURRENT_STEP:-script}" out="${CURRENT_OUT:-}" msg=""
+  set +e
+  if [ -n "$out" ] && [ -f "$out" ]; then msg=$(tail -n 40 "$out" 2>/dev/null || true); fi
+  printf '::endgroup::\n' >&3
+  printf '::error title=%s::code %s — %s\n' "$step" "$rc" "$(escape_ann "${msg:-(aucune sortie)}")" >&3
+  exit "$rc"
+}
+trap on_error ERR
+
 run_step() { # $1 = nom affiché, $2... = fonction de phase
   local name="$1"; shift
-  local out rc=0
+  local out
   out=$(mktemp)
+  CURRENT_STEP="$name"
+  CURRENT_OUT="$out"
   echo "::group::${name}"
-  "$@" >"$out" 2>&1 || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    local msg
-    msg=$(escape_ann "$(tail -n 30 "$out" 2>/dev/null || true)")
-    echo "::endgroup::"
-    echo "::error title=${name}::code ${rc} — ${msg:-(aucune sortie)}"
-    return "$rc"
-  fi
+  # Groupe de commandes + redirection : contrairement à `cmd || rc=$?`, cela ne
+  # désactive PAS `set -e` dans la phase appelée — un `gradlew` en échec arrête
+  # donc bien le pipeline et déclenche on_error().
+  { "$@" 2>&1; } >>"$out"
+  CURRENT_STEP=""
+  CURRENT_OUT=""
   tail -n 25 "$out" || true
   note "${name} — OK" "$(tail -n 8 "$out")"
   echo "::endgroup::"
   rm -f "$out"
-  return 0
 }
 
 # --- 1. JDK ------------------------------------------------------------------
