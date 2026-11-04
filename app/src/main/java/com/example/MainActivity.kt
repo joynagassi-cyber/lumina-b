@@ -108,6 +108,8 @@ import com.example.ui.screens.ExportScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.MembersScreen
 import com.example.ui.screens.OnboardingScreen
+import com.example.ui.screens.ProjectsScreen
+import androidx.compose.material.icons.filled.Savings
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TeamSyncScreen
 import com.example.ui.screens.TimelineScreen
@@ -122,6 +124,7 @@ enum class AppScreen(val title: String) {
     CAISSES("Caisses"),
     BUDGETS("Budgets"),
     MEMBERS("Membres"),
+    PROJECTS("Projets"),
     TIMELINE("Historique"),
     EXPORT("Exports"),
     TEAM("Équipe & partage"),
@@ -142,7 +145,8 @@ class MainActivity : ComponentActivity() {
             database.cashRegisterDao(),
             database.churchProfileDao(),
             database.memberDao(),
-            database.userDao()
+            database.userDao(),
+            database.projectDao()
         )
 
         setContent {
@@ -395,6 +399,19 @@ fun LuminaApp(
                 )
 
                 NavigationDrawerItem(
+                    label = { Text("Projets & fonds affectés", fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.Savings, contentDescription = null) },
+                    selected = currentScreen == AppScreen.PROJECTS,
+                    onClick = {
+                        currentScreen = AppScreen.PROJECTS
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier
+                        .padding(NavigationDrawerItemDefaults.ItemPadding)
+                        .testTag("drawer_item_projects")
+                )
+
+                NavigationDrawerItem(
                     label = { Text("Rapports & Exports", fontWeight = FontWeight.SemiBold) },
                     icon = { Icon(Icons.Default.Share, contentDescription = null) },
                     selected = currentScreen == AppScreen.EXPORT,
@@ -490,6 +507,7 @@ fun LuminaApp(
                                 AppScreen.BUDGETS -> "Budgets"
                                 AppScreen.TIMELINE -> "Historique"
                                 AppScreen.MEMBERS -> "Membres"
+                                AppScreen.PROJECTS -> "Projets"
                                 AppScreen.EXPORT -> "Rapports"
                                 AppScreen.TEAM -> "Équipe & partage"
                                 AppScreen.SETTINGS -> "Paramètres"
@@ -637,12 +655,13 @@ fun LuminaApp(
                     AppScreen.CAISSES -> "Caisse"
                     AppScreen.BUDGETS -> "Budget"
                     AppScreen.MEMBERS -> "Membre"
+                    AppScreen.PROJECTS -> "Projet"
                     else -> "Opération"
                 }
                 if (uiState.canWrite) FloatingActionButton(
                     onClick = {
                         when (currentScreen) {
-                            AppScreen.CAISSES, AppScreen.BUDGETS, AppScreen.MEMBERS -> createSignal++
+                            AppScreen.CAISSES, AppScreen.BUDGETS, AppScreen.MEMBERS, AppScreen.PROJECTS -> createSignal++
                             else -> showAddDialog = true
                         }
                     },
@@ -714,6 +733,17 @@ fun LuminaApp(
                         onUpdateMember = { viewModel.updateMember(it) },
                         onDeleteMember = { viewModel.deleteMember(it) },
                         createSignal = createSignal
+                    )
+                    AppScreen.PROJECTS -> ProjectsScreen(
+                        projects = uiState.projectSummaries,
+                        createSignal = createSignal,
+                        onAddProject = { name, description, target ->
+                            viewModel.addProject(name, description, target)
+                        },
+                        onUpdateProject = { project, name, description, target, closed ->
+                            viewModel.updateProject(project, name, description, target, closed)
+                        },
+                        onDeleteProject = { project -> viewModel.deleteProject(project) }
                     )
                     AppScreen.TIMELINE -> TimelineScreen(
                         uiState = uiState,
@@ -797,13 +827,14 @@ fun LuminaApp(
         AddTransactionDialog(
             categories = uiState.categories,
             cashRegisters = uiState.cashRegisters,
+            projects = uiState.projects,
             defaultCashRegisterId = uiState.selectedCashRegisterId,
             onDismissRequest = { showAddDialog = false },
             onOpenCategoryManager = {
                 showAddDialog = false
                 showCategoryManager = true
             },
-            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName, receiptPath ->
+            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName, receiptPath, projectId ->
                 viewModel.addTransaction(
                     title = title,
                     type = type,
@@ -813,7 +844,8 @@ fun LuminaApp(
                     note = note,
                     cashRegisterId = regId,
                     cashRegisterName = regName,
-                    receiptPhotoUri = receiptPath
+                    receiptPhotoUri = receiptPath,
+                    projectId = projectId
                 )
             }
         )
@@ -823,6 +855,7 @@ fun LuminaApp(
         AddTransactionDialog(
             categories = uiState.categories,
             cashRegisters = uiState.cashRegisters,
+            projects = uiState.projects,
             defaultCashRegisterId = tx.cashRegisterId,
             initial = tx,
             onDismissRequest = { transactionToEdit = null },
@@ -830,7 +863,7 @@ fun LuminaApp(
                 transactionToEdit = null
                 showCategoryManager = true
             },
-            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName, receiptPath ->
+            onSaveTransaction = { title, type, amountCents, category, timestamp, note, regId, regName, receiptPath, projectId ->
                 viewModel.updateTransaction(
                     id = tx.id,
                     title = title,
@@ -841,7 +874,8 @@ fun LuminaApp(
                     note = note,
                     cashRegisterId = regId,
                     cashRegisterName = regName,
-                    receiptPhotoUri = receiptPath
+                    receiptPhotoUri = receiptPath,
+                    projectId = projectId
                 )
                 transactionToEdit = null
             }

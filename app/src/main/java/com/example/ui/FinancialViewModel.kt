@@ -10,6 +10,7 @@ import com.example.data.CategoryEntity
 import com.example.data.ChurchProfileEntity
 import com.example.data.MemberEntity
 import com.example.data.TransactionEntity
+import com.example.data.ProjectEntity
 import com.example.data.TransactionRepository
 import com.example.data.TransactionType
 import com.example.data.UserEntity
@@ -27,6 +28,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -106,6 +108,25 @@ data class RegisterStatement(
     val closingCents: Long
 )
 
+/** Situation d'un projet : collecté, dépensé, solde disponible. */
+data class ProjectSummary(
+    val id: Long,
+    val name: String,
+    val description: String,
+    val targetCents: Long,
+    val collectedCents: Long,
+    val spentCents: Long,
+    val isClosed: Boolean
+) {
+    val balanceCents: Long get() = collectedCents - spentCents
+    val progress: Float
+        get() = if (targetCents > 0L) {
+            ((collectedCents.toDouble() / targetCents.toDouble()).toFloat()).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+}
+
 /** Ligne « budget prévu / réalisé » pour le rapport. */
 data class BudgetLine(
     val categoryName: String,
@@ -135,7 +156,9 @@ data class BilanSnapshot(
     /** Budget prévu vs réalisé du mois affiché. */
     val budgetLines: List<BudgetLine> = emptyList(),
     /** Écritures annulées sur la période (traçabilité). */
-    val cancelledCount: Int = 0
+    val cancelledCount: Int = 0,
+    /** Fonds affectés : situation de chaque projet. */
+    val projectSummaries: List<ProjectSummary> = emptyList()
 )
 
 data class FinancialUiState(
@@ -172,6 +195,8 @@ data class FinancialUiState(
     val members: List<MemberEntity> = emptyList(),
     val users: List<UserEntity> = emptyList(),
     val currentUser: UserEntity? = null,
+    val projects: List<ProjectEntity> = emptyList(),
+    val projectSummaries: List<ProjectSummary> = emptyList(),
     val bilan: BilanSnapshot = BilanSnapshot(),
     val activeFilterCount: Int = 0,
     val canWrite: Boolean = true,
@@ -228,7 +253,8 @@ class FinancialViewModel(
         _maxAmountCents,
         _sortMode,
         repository.allUsers,
-        _currentUser
+        _currentUser,
+        repository.allProjects
     ) { args: Array<Any?> ->
         @Suppress("UNCHECKED_CAST")
         val allTx = args[0] as List<TransactionEntity>
@@ -255,6 +281,7 @@ class FinancialViewModel(
         @Suppress("UNCHECKED_CAST")
         val users = args[17] as List<UserEntity>
         val currentUser = args[18] as? UserEntity
+        val allProjects = args[19] as List<ProjectEntity>
 
         val themeMode = themeOverride ?: runCatching { ThemeMode.valueOf(profile.themeMode) }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -478,6 +505,24 @@ class FinancialViewModel(
             )
         }
 
+        // Fonds affectés : collecté (entrées rattachées) et dépensé (sorties rattachées)
+        val projectSummaries = allProjects.filter { !it.isDeleted }.map { project ->
+            val projectTx = allTx.filter { it.projectId == project.id && !it.isNeutralised }
+            ProjectSummary(
+                id = project.id,
+                name = project.name,
+                description = project.description,
+                targetCents = project.targetCents,
+                collectedCents = projectTx
+                    .filter { it.type == TransactionType.INCOME }
+                    .sumOf { it.amountCents },
+                spentCents = projectTx
+                    .filter { it.type == TransactionType.EXPENSE }
+                    .sumOf { it.amountCents },
+                isClosed = project.isClosed
+            )
+        }
+
         val bilan = BilanSnapshot(
             totalProductsCents = totalIncome,
             totalChargesCents = totalExpense,
@@ -499,6 +544,7 @@ class FinancialViewModel(
                 )
             }.sortedByDescending { it.plannedCents },
             cancelledCount = periodBaseTx.count { it.isCancelled },
+            projectSummaries = projectSummaries,
             registerStatements = statements,
             openingTresorerieCents = statements.sumOf { it.openingCents },
             closingTresorerieCents = statements.sumOf { it.closingCents }
@@ -540,16 +586,24 @@ class FinancialViewModel(
             activeFilterCount = activeFilterCount,
             users = users,
             currentUser = currentUser,
+            projects = allProjects.filter { !it.isDeleted },
+            projectSummaries = projectSummaries,
             canWrite = currentUser?.roleValue?.canWrite ?: true,
             canDelete = currentUser?.roleValue?.canDelete ?: true,
             canManageUsers = currentUser?.roleValue?.canManageUsers ?: true,
             isLoading = false
         )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = FinancialUiState(isLoading = true)
-    )
+    }
+        // Les agrégats (soldes, budgets, graphiques) sont calculés hors du fil
+        // principal : l'interface ne se fige pas sur un gros journal.
+        .flowOn(kotlinx.coroutines.Dispatchers.Default)
+        // Un imprévu de calcul ne doit jamais tuer l'écran : on garde le dernier état.
+        .catch { emit(FinancialUiState(isLoading = false)) }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = FinancialUiState(isLoading = true)
+        )
 
     // ==========================================
     // Filtres
@@ -757,6 +811,7 @@ class FinancialViewModel(
         viewModelScope.launch {
             if (fullReset) {
                 repository.wipeEverything()
+                repository.deleteAllProjects()
                 clearGeneratedFiles(context)
                 _selectedCashRegisterId.value = null
                 _selectedCategoryFilter.value = null
@@ -1105,6 +1160,85 @@ class FinancialViewModel(
     }
 
     /** Supprime un virement complet (les deux écritures) ou une opération simple. */
+    // ==========================================
+    // Projets et fonds affectés
+    // ==========================================
+    fun addProject(name: String, description: String, targetCents: Long) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            val cleanName = name.trim()
+            if (cleanName.isBlank()) {
+                _eventFlow.emit("Le nom du projet est obligatoire")
+                return@launch
+            }
+            if (uiState.value.projects.any { it.name.equals(cleanName, ignoreCase = true) }) {
+                _eventFlow.emit("Un projet nommé \"$cleanName\" existe déjà")
+                return@launch
+            }
+            repository.saveProject(
+                ProjectEntity(
+                    name = cleanName,
+                    description = description.trim(),
+                    targetCents = targetCents.coerceAtLeast(0L)
+                )
+            )
+            _eventFlow.emit("Projet \"$cleanName\" créé")
+        }
+    }
+
+    fun updateProject(project: ProjectEntity, name: String, description: String, targetCents: Long, isClosed: Boolean) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            val cleanName = name.trim()
+            if (cleanName.isBlank()) {
+                _eventFlow.emit("Le nom du projet est obligatoire")
+                return@launch
+            }
+            if (uiState.value.projects.any { it.id != project.id && it.name.equals(cleanName, ignoreCase = true) }) {
+                _eventFlow.emit("Un projet nommé \"$cleanName\" existe déjà")
+                return@launch
+            }
+            repository.updateProject(
+                project.copy(
+                    name = cleanName,
+                    description = description.trim(),
+                    targetCents = targetCents.coerceAtLeast(0L),
+                    isClosed = isClosed,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            _eventFlow.emit("Projet \"$cleanName\" mis à jour")
+        }
+    }
+
+    fun deleteProject(project: ProjectEntity) {
+        viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
+            repository.deleteProject(project.id)
+            _eventFlow.emit("Projet \"${project.name}\" supprimé : les écritures restent, sans affectation")
+        }
+    }
+
+    /** Affecte (ou retire) un projet à une écriture existante. */
+    fun assignProject(transaction: TransactionEntity, projectId: Long) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            if (!ensurePeriodOpen(transaction.timestamp)) return@launch
+            repository.update(
+                transaction.copy(
+                    projectId = projectId,
+                    updatedAt = System.currentTimeMillis(),
+                    updatedBy = uiState.value.currentUser?.displayName ?: ""
+                )
+            )
+            val projectName = uiState.value.projects.firstOrNull { it.id == projectId }?.name
+            _eventFlow.emit(
+                if (projectName != null) "Écriture affectée au projet \"$projectName\""
+                else "Affectation retirée"
+            )
+        }
+    }
+
     /** Vérifie que la date n'est pas couverte par une clôture de comptes. */
     private suspend fun ensurePeriodOpen(timestamp: Long): Boolean {
         val closedUntil = uiState.value.profile.booksClosedUntilMillis
@@ -1277,7 +1411,8 @@ class FinancialViewModel(
         note: String,
         cashRegisterId: Long,
         cashRegisterName: String,
-        receiptPhotoUri: String = ""
+        receiptPhotoUri: String = "",
+        projectId: Long = 0L
     ) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
@@ -1302,6 +1437,7 @@ class FinancialViewModel(
                     cashRegisterId = cashRegisterId,
                     cashRegisterName = cashRegisterName,
                     receiptPhotoUri = receiptPhotoUri,
+                    projectId = projectId,
                     updatedAt = System.currentTimeMillis(),
                     updatedBy = uiState.value.currentUser?.displayName ?: ""
                 )
@@ -1319,7 +1455,8 @@ class FinancialViewModel(
         note: String = "",
         cashRegisterId: Long = 1L,
         cashRegisterName: String = "Caisse principale",
-        receiptPhotoUri: String = ""
+        receiptPhotoUri: String = "",
+        projectId: Long = 0L
     ) {
         viewModelScope.launch {
             if (!uiState.value.canWrite) {
@@ -1339,7 +1476,8 @@ class FinancialViewModel(
                 cashRegisterId = cashRegisterId,
                 cashRegisterName = cashRegisterName,
                 receiptPhotoUri = receiptPhotoUri,
-                updatedBy = uiState.value.currentUser?.displayName ?: ""
+                updatedBy = uiState.value.currentUser?.displayName ?: "",
+                projectId = projectId
             )
             repository.insert(entity)
 

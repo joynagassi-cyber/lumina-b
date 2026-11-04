@@ -658,6 +658,73 @@ object ReportExporter {
         }
 
         // =================================================================
+        // 7. Fonds affectés (projets)
+        // =================================================================
+        val projectLines = bilan.projectSummaries
+        if (projectLines.isNotEmpty()) {
+            if (currentY + 100f > PAGE_HEIGHT - 80f) {
+                newPage("RAPPORT DE GESTION — SUITE")
+                currentY = 58f
+            }
+            canvas.drawText("7. FONDS AFFECTÉS (PROJETS)", MARGIN, currentY, sectionPaint)
+            currentY += 12f
+            canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 15f, tableHeaderPaint)
+            val head = textPaint(7.2f, AndroidColor.WHITE, bold = true)
+            fun headRight(label: String, x: Float) {
+                val p = Paint(head).apply { textAlign = Paint.Align.RIGHT }
+                canvas.drawText(label, x, currentY + 10f, p)
+            }
+            canvas.drawText("PROJET", MARGIN + 4f, currentY + 10f, head)
+            headRight("OBJECTIF", MARGIN + 300f)
+            headRight("COLLECTÉ", MARGIN + 380f)
+            headRight("DÉPENSÉ", MARGIN + 455f)
+            headRight("DISPONIBLE", PAGE_WIDTH - MARGIN - 4f)
+            currentY += 15f
+
+            val projPaint = textPaint(7.5f, AndroidColor.rgb(63, 63, 70))
+            val projBold = textPaint(7.5f, AndroidColor.rgb(9, 9, 11), bold = true)
+            projectLines.forEachIndexed { index, project ->
+                if (currentY + 16f > PAGE_HEIGHT - 60f) {
+                    newPage("RAPPORT DE GESTION — SUITE")
+                    currentY = 58f
+                }
+                if (index % 2 == 1) {
+                    canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 14f, cardBgPaint)
+                }
+                fun rightVal(value: String, x: Float, paint: Paint, color: Int? = null) {
+                    val p = Paint(paint).apply {
+                        textAlign = Paint.Align.RIGHT
+                        if (color != null) this.color = color
+                    }
+                    canvas.drawText(value, x, currentY + 10f, p)
+                }
+                canvas.drawText(project.name.take(38), MARGIN + 4f, currentY + 10f, projPaint)
+                rightVal(
+                    if (project.targetCents > 0L) CurrencyFormatter.format(project.targetCents) else "—",
+                    MARGIN + 300f,
+                    projPaint
+                )
+                rightVal(CurrencyFormatter.format(project.collectedCents), MARGIN + 380f, projPaint, AndroidColor.rgb(4, 120, 87))
+                rightVal(CurrencyFormatter.format(project.spentCents), MARGIN + 455f, projPaint, AndroidColor.rgb(190, 24, 93))
+                rightVal(
+                    CurrencyFormatter.format(project.balanceCents),
+                    PAGE_WIDTH - MARGIN - 4f,
+                    projBold
+                )
+                currentY += 14f
+            }
+            currentY += 8f
+            canvas.drawText(
+                "Les écritures rattachées à un projet constituent les dons affectés : " +
+                    "le disponible ne peut être employé que sur ce projet.",
+                MARGIN,
+                currentY,
+                smallPaint
+            )
+            currentY += 18f
+        }
+
+        // =================================================================
         // 8. Détail chronologique des écritures
         // =================================================================
         if (transactions.isNotEmpty()) {
@@ -741,7 +808,7 @@ object ReportExporter {
             newPage("VALIDATION DU DOCUMENT")
             currentY = 58f
         }
-        canvas.drawText("7. VALIDATION", MARGIN, currentY, sectionPaint)
+        canvas.drawText("8. VALIDATION", MARGIN, currentY, sectionPaint)
         currentY += 12f
         canvas.drawText(
             "Document établi à partir des écritures saisies dans l'application de gestion de l'église.",

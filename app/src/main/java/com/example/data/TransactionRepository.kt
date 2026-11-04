@@ -9,7 +9,8 @@ class TransactionRepository(
     private val cashRegisterDao: CashRegisterDao,
     private val churchProfileDao: ChurchProfileDao,
     private val memberDao: MemberDao,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val projectDao: ProjectDao
 ) {
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
@@ -247,6 +248,25 @@ class TransactionRepository(
         val now = System.currentTimeMillis()
         transactionDao.softDeleteByCashRegister(id, now, "")
         cashRegisterDao.softDeleteById(id, now)
+    }
+
+    // ==========================================
+    // Projets / fonds affectés
+    // ==========================================
+    val allProjects: Flow<List<ProjectEntity>> = projectDao.observeProjects()
+
+    suspend fun getProjectsOnce(): List<ProjectEntity> = projectDao.getAllOnce()
+
+    suspend fun getProjectById(id: Long): ProjectEntity? = projectDao.getById(id)
+
+    suspend fun saveProject(project: ProjectEntity): Long = projectDao.upsert(project)
+
+    suspend fun updateProject(project: ProjectEntity) = projectDao.update(project)
+
+    suspend fun deleteProject(id: Long) = projectDao.softDelete(id, System.currentTimeMillis())
+
+    suspend fun deleteAllProjects() = projectDao.getAllOnce().forEach {
+        projectDao.softDelete(it.id, System.currentTimeMillis())
     }
 
     // ==========================================

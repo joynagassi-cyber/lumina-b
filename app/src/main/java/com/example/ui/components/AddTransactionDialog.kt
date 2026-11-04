@@ -58,6 +58,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.CashRegisterEntity
 import com.example.data.CategoryEntity
+import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.theme.ExpenseRed
@@ -77,6 +78,8 @@ fun AddTransactionDialog(
     defaultCashRegisterId: Long? = null,
     /** Opération existante : le formulaire s'ouvre pré-rempli pour modification. */
     initial: TransactionEntity? = null,
+    /** Projets ouverts à l'affectation (fonds fléchés). */
+    projects: List<ProjectEntity> = emptyList(),
     onDismissRequest: () -> Unit,
     onOpenCategoryManager: () -> Unit = {},
     onSaveTransaction: (
@@ -88,7 +91,8 @@ fun AddTransactionDialog(
         note: String,
         cashRegisterId: Long,
         cashRegisterName: String,
-        receiptPhotoUri: String
+        receiptPhotoUri: String,
+        projectId: Long
     ) -> Unit
 ) {
     var selectedType by remember { mutableStateOf(initial?.type ?: TransactionType.EXPENSE) }
@@ -131,6 +135,7 @@ fun AddTransactionDialog(
         mutableLongStateOf(initialId)
     }
 
+    var selectedProjectId by remember { mutableLongStateOf(initial?.projectId ?: 0L) }
     var customCategory by remember { mutableStateOf("") }
     var isCustomCategorySelected by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf(initial?.note ?: "") }
@@ -317,6 +322,45 @@ fun AddTransactionDialog(
                                 selectedBorderWidth = 1.5.dp
                             )
                         )
+                    }
+                }
+
+                val openProjects = projects.filter { !it.isClosed }
+                if (openProjects.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "PROJET / FONDS AFFECTÉ (OPTIONNEL)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        FilterChip(
+                            selected = selectedProjectId == 0L,
+                            onClick = { selectedProjectId = 0L },
+                            label = { Text("Aucun", fontSize = 12.sp) },
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        openProjects.forEach { project ->
+                            val isSelected = selectedProjectId == project.id
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { selectedProjectId = project.id },
+                                label = {
+                                    Text(
+                                        project.name,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
                     }
                 }
 
@@ -592,7 +636,8 @@ fun AddTransactionDialog(
                             note,
                             selectedRegisterId,
                             regName,
-                            receiptPath
+                            receiptPath,
+                            selectedProjectId
                         )
                         onDismissRequest()
                     },
