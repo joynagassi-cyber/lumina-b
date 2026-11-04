@@ -1,3 +1,45 @@
+# Lumina — journal des versions
+
+## v1.1.0 — refonte de la gestion financière d'église
+
+### Onboarding et identité
+- Assistant de premier lancement en trois étapes : présentation, **identité de
+  l'église** (nom obligatoire, dénomination, ville, adresse, contacts,
+  responsable, trésorier), puis **logo et couleur d'accent** avec aperçu réel de
+  l'en-tête des rapports.
+- Profil local enregistré sur l'appareil, modifiable depuis les paramètres :
+  le nom, le logo et la couleur habillent l'application **et** les bilans PDF.
+- Sept palettes d'accent proposées, bleu indigo par défaut.
+
+### Comptabilité
+- **Virements internes déterministes** : deux écritures indissociables, exclues
+  des produits et des charges ; confirmation avec solde avant → après des deux
+  caisses ; solde insuffisant refusé ; suppression groupée.
+- Suppression d'une caisse avec ses écritures (plus d'opérations orphelines).
+- Renommage d'une catégorie propagé aux opérations et aux budgets.
+- Plafonds budgétaires : alerte locale à 80 % et au dépassement.
+- Le premier lancement ne crée plus d'écritures fictives : plan de comptes
+  d'église (dîmes, offrandes, diaconie, missions…) et une caisse vide.
+
+### Membres
+- Nouveau registre : prénom et nom obligatoires ; situation matrimoniale,
+  conjoint, contact, adresse, lieu de résidence, profession et notes optionnels,
+  avec recherche et édition.
+
+### Interface
+- Historique : page entièrement défilante, filtres repliés derrière deux icônes
+  (période, nature, caisse, catégorie, montant min/max, tri).
+- Filtre par caisse de l'historique corrigé (il n'était pas transmis).
+- Caisses et budgets : l'en-tête ne coupe plus le contenu de la liste.
+- Justificatif photo ou scan, facultatif, sur chaque opération.
+- Notifications locales : confirmations, virements, alertes de budget.
+- Mentions techniques retirées de l'interface.
+
+### Rapports
+- Bilan PDF restructuré : en-tête institutionnel, synthèse, compte de résultat
+  par nature, trésorerie par caisse, graphique sur six mois, répartition des
+  charges, détail des écritures et bloc de signatures.
+
 # Journal des versions — Lumina-beta
 
 ## v1.0.0 — première release
