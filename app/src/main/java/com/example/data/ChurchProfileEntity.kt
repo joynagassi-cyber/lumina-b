@@ -37,6 +37,8 @@ data class ChurchProfileEntity(
     val notificationsEnabled: Boolean = true,
     /** Devise affichée dans les rapports (FCFA par défaut). */
     val currencyCode: String = "FCFA",
+    /** Comptes arrêtés jusqu'à cette date (incluse). 0 = aucune clôture. */
+    val booksClosedUntilMillis: Long = 0L,
     val updatedAt: Long = System.currentTimeMillis()
 ) {
     val displayName: String

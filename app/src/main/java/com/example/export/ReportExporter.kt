@@ -574,6 +574,90 @@ object ReportExporter {
         }
 
         // =================================================================
+        // 6 bis. Budget prévu vs réalisé
+        // =================================================================
+        val budgetLines = bilan.budgetLines
+        if (budgetLines.isNotEmpty()) {
+            if (currentY + 100f > PAGE_HEIGHT - 80f) {
+                newPage("RAPPORT DE GESTION — SUITE")
+                currentY = 58f
+            }
+            canvas.drawText("6. BUDGET PRÉVU / RÉALISÉ", MARGIN, currentY, sectionPaint)
+            currentY += 12f
+
+            val colCatB = MARGIN + 4f
+            val colPlan = MARGIN + 250f
+            val colReal = MARGIN + 340f
+            val colGap = MARGIN + 430f
+            val colPct = PAGE_WIDTH - MARGIN - 4f
+            val linePaint = textPaint(7.5f, AndroidColor.rgb(63, 63, 70))
+            val lineBold = textPaint(7.5f, AndroidColor.rgb(9, 9, 11), bold = true)
+
+            fun budgetHeader() {
+                canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 15f, tableHeaderPaint)
+                val head = textPaint(7.2f, AndroidColor.WHITE, bold = true)
+                canvas.drawText("CATÉGORIE", colCatB, currentY + 10f, head)
+                fun rightH(label: String, x: Float) {
+                    val p = Paint(head).apply { textAlign = Paint.Align.RIGHT }
+                    canvas.drawText(label, x, currentY + 10f, p)
+                }
+                rightH("PRÉVU", colPlan)
+                rightH("RÉALISÉ", colReal)
+                rightH("ÉCART", colGap)
+                rightH("USAGE", colPct)
+                currentY += 15f
+            }
+            budgetHeader()
+
+            budgetLines.take(14).forEachIndexed { index, line ->
+                if (currentY + 16f > PAGE_HEIGHT - 60f) {
+                    newPage("RAPPORT DE GESTION — SUITE")
+                    currentY = 58f
+                    budgetHeader()
+                }
+                if (index % 2 == 1) {
+                    canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 14f, cardBgPaint)
+                }
+                val gap = line.plannedCents - line.actualCents
+                val usage = if (line.plannedCents > 0L) {
+                    (line.actualCents.toDouble() / line.plannedCents.toDouble()) * 100.0
+                } else {
+                    null
+                }
+                canvas.drawText(line.categoryName.take(34), colCatB, currentY + 10f, linePaint)
+                fun rightV(value: String, x: Float, paint: Paint, color: Int? = null) {
+                    val p = Paint(paint).apply {
+                        textAlign = Paint.Align.RIGHT
+                        if (color != null) this.color = color
+                    }
+                    canvas.drawText(value, x, currentY + 10f, p)
+                }
+                rightV(CurrencyFormatter.format(line.plannedCents), colPlan, linePaint)
+                rightV(CurrencyFormatter.format(line.actualCents), colReal, linePaint)
+                rightV(
+                    CurrencyFormatter.format(kotlin.math.abs(gap), withSign = false),
+                    colGap,
+                    lineBold,
+                    if (gap >= 0) AndroidColor.rgb(4, 120, 87) else AndroidColor.rgb(190, 24, 93)
+                )
+                rightV(
+                    usage?.let { String.format(Locale.FRANCE, "%.0f %%", it) } ?: "—",
+                    colPct,
+                    linePaint
+                )
+                currentY += 14f
+            }
+            currentY += 8f
+            canvas.drawText(
+                "Écart positif = marge disponible ; écart négatif = dépassement du plafond.",
+                MARGIN,
+                currentY,
+                smallPaint
+            )
+            currentY += 18f
+        }
+
+        // =================================================================
         // 8. Détail chronologique des écritures
         // =================================================================
         if (transactions.isNotEmpty()) {
@@ -657,7 +741,7 @@ object ReportExporter {
             newPage("VALIDATION DU DOCUMENT")
             currentY = 58f
         }
-        canvas.drawText("6. VALIDATION", MARGIN, currentY, sectionPaint)
+        canvas.drawText("7. VALIDATION", MARGIN, currentY, sectionPaint)
         currentY += 12f
         canvas.drawText(
             "Document établi à partir des écritures saisies dans l'application de gestion de l'église.",
@@ -676,7 +760,8 @@ object ReportExporter {
         currentY += 12f
         canvas.drawText(
             "Document $docRef • Période $periodRangeLabel • Saisie : $issuedBy • " +
-                "${transactions.size} écriture(s) rapprochée(s) du journal.",
+                "${transactions.size} écriture(s) rapprochée(s) du journal • " +
+                "${bilan.cancelledCount} annulée(s) par contre-écriture.",
             MARGIN,
             currentY,
             smallPaint

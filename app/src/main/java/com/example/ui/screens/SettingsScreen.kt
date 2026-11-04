@@ -34,6 +34,8 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
@@ -80,6 +82,8 @@ fun SettingsScreen(
     onNavigateToExport: () -> Unit,
     onEditChurchProfile: () -> Unit = {},
     onWipeData: (Boolean) -> Unit = {},
+    onClosePreviousMonth: () -> Unit = {},
+    onReopenBooks: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
@@ -432,6 +436,54 @@ fun SettingsScreen(
                 showDivider = false,
                 modifier = Modifier.testTag("wipe_all_row")
             )
+        }
+
+
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
+
+        // SECTION 7 : CLÔTURE DES COMPTES
+        GroupedCard(title = "Clôture des comptes") {
+            ListRow(
+                title = if (uiState.profile.booksClosedUntilMillis > 0L) {
+                    "Comptes clôturés jusqu'au ${
+                        java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE)
+                            .format(java.util.Date(uiState.profile.booksClosedUntilMillis))
+                    }"
+                } else {
+                    "Aucune période clôturée"
+                },
+                subtitle = "Une période clôturée n'accepte plus de saisie, de modification ni d'annulation : " +
+                    "les comptes restent figés pour le contrôle.",
+                icon = Icons.Default.Lock,
+                iconTileColor = MaterialTheme.colorScheme.secondaryContainer,
+                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                showDivider = true
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onClosePreviousMonth,
+                    shape = LuminaTokens.ShapePill,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("close_books_button")
+                ) {
+                    Text("Clôturer le mois dernier", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = onReopenBooks,
+                    shape = LuminaTokens.ShapePill,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("reopen_books_button")
+                ) {
+                    Text("Réouvrir", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(80.dp))

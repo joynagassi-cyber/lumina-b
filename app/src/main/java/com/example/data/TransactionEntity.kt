@@ -44,7 +44,14 @@ data class TransactionEntity(
     /** Auteur de la saisie (ou de la dernière modification). */
     val updatedBy: String = "",
     /** Suppression logique : l'écriture reste dans le journal pour la fusion. */
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    /**
+     * Annulation par contre-écriture : identité de l'écriture annulée.
+     * Une contre-écriture porte l'identité de l'écriture qu'elle neutralise.
+     */
+    val reversalOfUid: String = "",
+    /** L'écriture a été annulée par une contre-écriture : elle reste au journal. */
+    val isCancelled: Boolean = false
 ) {
     val amountFormatted: String
         get() = CurrencyFormatter.format(amountCents)
@@ -55,6 +62,14 @@ data class TransactionEntity(
 
     val hasReceipt: Boolean
         get() = receiptPhotoUri.isNotBlank()
+
+    /** Écriture neutralisée : soit annulée, soit contre-écriture d'annulation. */
+    val isNeutralised: Boolean
+        get() = isCancelled || reversalOfUid.isNotBlank()
+
+    /** Contre-écriture générée par une annulation. */
+    val isReversal: Boolean
+        get() = reversalOfUid.isNotBlank()
 }
 
 class Converters {

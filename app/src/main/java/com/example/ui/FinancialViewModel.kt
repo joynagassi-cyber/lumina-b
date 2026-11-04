@@ -106,6 +106,13 @@ data class RegisterStatement(
     val closingCents: Long
 )
 
+/** Ligne « budget prévu / réalisé » pour le rapport. */
+data class BudgetLine(
+    val categoryName: String,
+    val plannedCents: Long,
+    val actualCents: Long
+)
+
 /** Agrégats consolidés d'une période, base du rapport professionnel. */
 data class BilanSnapshot(
     val totalProductsCents: Long = 0,
@@ -124,7 +131,11 @@ data class BilanSnapshot(
     /** Situation détaillée de chaque caisse : ouverture, mouvements, clôture. */
     val registerStatements: List<RegisterStatement> = emptyList(),
     val openingTresorerieCents: Long = 0L,
-    val closingTresorerieCents: Long = 0L
+    val closingTresorerieCents: Long = 0L,
+    /** Budget prévu vs réalisé du mois affiché. */
+    val budgetLines: List<BudgetLine> = emptyList(),
+    /** Écritures annulées sur la période (traçabilité). */
+    val cancelledCount: Int = 0
 )
 
 data class FinancialUiState(
@@ -294,7 +305,9 @@ class FinancialViewModel(
 
         // Les virements internes sont exclus des produits et des charges :
         // ils ne font que déplacer de la trésorerie d'une caisse à l'autre.
-        val operatingTx = periodBaseTx.filter { !it.isTransfer }
+        // Les virements ne sont pas des produits/charges, et une écriture annulée
+        // (ou sa contre-écriture) ne doit pas peser sur le résultat.
+        val operatingTx = periodBaseTx.filter { !it.isTransfer && !it.isNeutralised }
         val transferTx = periodBaseTx.filter { it.isTransfer }
 
         val totalIncome = operatingTx
@@ -371,7 +384,7 @@ class FinancialViewModel(
         // ==========================================
         val (bStart, bEnd) = calculateMonthBounds(budgetCal)
         val monthExpenseTx = allTx.filter {
-            it.type == TransactionType.EXPENSE && !it.isTransfer &&
+            it.type == TransactionType.EXPENSE && !it.isTransfer && !it.isNeutralised &&
                 it.timestamp in bStart..bEnd &&
                 (selectedRegId == null || it.cashRegisterId == selectedRegId)
         }
@@ -478,6 +491,14 @@ class FinancialViewModel(
             monthlySeries = monthlySeries,
             periodStartMillis = periodStartMillis,
             periodEndMillis = periodEndMillis,
+            budgetLines = periodBudgets.map { budgetLine ->
+                BudgetLine(
+                    categoryName = budgetLine.categoryName,
+                    plannedCents = budgetLine.amountCents,
+                    actualCents = spentPerCategory[budgetLine.categoryName] ?: 0L
+                )
+            }.sortedByDescending { it.plannedCents },
+            cancelledCount = periodBaseTx.count { it.isCancelled },
             registerStatements = statements,
             openingTresorerieCents = statements.sumOf { it.openingCents },
             closingTresorerieCents = statements.sumOf { it.closingCents }
@@ -1015,6 +1036,7 @@ class FinancialViewModel(
     ) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
+            if (!ensurePeriodOpen(timestamp)) return@launch
             if (sourceId == targetId) {
                 _eventFlow.emit("La caisse de départ et la caisse d'arrivée doivent être différentes")
                 return@launch
@@ -1083,9 +1105,101 @@ class FinancialViewModel(
     }
 
     /** Supprime un virement complet (les deux écritures) ou une opération simple. */
+    /** Vérifie que la date n'est pas couverte par une clôture de comptes. */
+    private suspend fun ensurePeriodOpen(timestamp: Long): Boolean {
+        val closedUntil = uiState.value.profile.booksClosedUntilMillis
+        if (closedUntil > 0L && timestamp <= closedUntil) {
+            val label = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE)
+                .format(java.util.Date(closedUntil))
+            _eventFlow.emit("Comptes clôturés jusqu'au $label : cette période n'est plus modifiable")
+            return false
+        }
+        return true
+    }
+
+    /** Clôture les comptes jusqu'à la fin du mois précédent. */
+    fun closePreviousMonth() {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            val cal = java.util.Calendar.getInstance()
+            cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            cal.set(java.util.Calendar.MILLISECOND, 0)
+            cal.add(java.util.Calendar.MILLISECOND, -1)
+            val until = cal.timeInMillis
+            repository.saveProfile(uiState.value.profile.copy(booksClosedUntilMillis = until))
+            val label = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.FRANCE)
+                .format(java.util.Date(until))
+            _eventFlow.emit("Comptes clôturés jusqu'au 31 $label : les écritures antérieures sont figées")
+        }
+    }
+
+    /** Réouverture complète des périodes (acte exceptionnel, tracé). */
+    fun reopenBooks() {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            repository.saveProfile(uiState.value.profile.copy(booksClosedUntilMillis = 0L))
+            _eventFlow.emit("Comptes réouverts : toute la période redevient modifiable")
+        }
+    }
+
+    /**
+     * Annule une écriture par **contre-écriture** : l'écriture d'origine reste
+     * au journal, marquée annulée, et une écriture inverse est créée. Les soldes
+     * restent justes, la piste d'audit est intacte.
+     */
+    fun cancelTransaction(transaction: TransactionEntity, reason: String = "") {
+        viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
+            if (!ensurePeriodOpen(transaction.timestamp)) return@launch
+            if (transaction.isNeutralised) {
+                _eventFlow.emit("Cette écriture est déjà annulée")
+                return@launch
+            }
+            val legs = if (transaction.isTransfer) {
+                repository.getTransferGroup(transaction.transferGroupId).ifEmpty { listOf(transaction) }
+            } else {
+                listOf(transaction)
+            }
+            val now = System.currentTimeMillis()
+            val author = uiState.value.currentUser?.displayName ?: ""
+            legs.forEach { leg ->
+                if (!leg.isNeutralised) {
+                    repository.insert(
+                        leg.copy(
+                            id = 0,
+                            uid = java.util.UUID.randomUUID().toString(),
+                            title = "Annulation — ${leg.title}",
+                            type = if (leg.type == TransactionType.INCOME) {
+                                TransactionType.EXPENSE
+                            } else {
+                                TransactionType.INCOME
+                            },
+                            timestamp = now,
+                            note = reason.trim().ifBlank { "Contre-écriture d'annulation" },
+                            reversalOfUid = leg.uid,
+                            isCancelled = false,
+                            updatedAt = now,
+                            updatedBy = author
+                        )
+                    )
+                    repository.update(leg.copy(isCancelled = true, updatedAt = now, updatedBy = author))
+                }
+            }
+            _eventFlow.emit(
+                if (transaction.isTransfer) "Virement annulé par contre-écriture dans les deux caisses"
+                else "Écriture annulée par contre-écriture"
+            )
+        }
+    }
+
     fun deleteTransaction(id: Long) {
         viewModelScope.launch {
             if (!ensurePermission(needDelete = true)) return@launch
+            val target = repository.getTransactionById(id)
+            if (target != null && !ensurePeriodOpen(target.timestamp)) return@launch
             val tx = repository.getTransactionById(id)
             if (tx != null && tx.isTransfer) {
                 repository.deleteByTransferGroup(tx.transferGroupId)
@@ -1172,6 +1286,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Opération introuvable")
                 return@launch
             }
+            if (!ensurePeriodOpen(existing.timestamp)) return@launch
             if (amountCents <= 0L || title.isBlank()) {
                 _eventFlow.emit("Intitulé et montant sont obligatoires")
                 return@launch
@@ -1211,6 +1326,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Votre profil est en lecture seule")
                 return@launch
             }
+            if (!ensurePeriodOpen(timestamp)) return@launch
             val entity = TransactionEntity(
                 title = title.trim(),
                 type = type,

@@ -99,6 +99,9 @@ class TransactionRepository(
         transactionDao.softDeleteById(id, System.currentTimeMillis(), author)
     }
 
+    suspend fun getTransferGroup(groupId: String): List<TransactionEntity> =
+        transactionDao.getByTransferGroup(groupId)
+
     suspend fun deleteByTransferGroup(groupId: String, author: String = "") {
         transactionDao.softDeleteByTransferGroup(groupId, System.currentTimeMillis(), author)
     }
