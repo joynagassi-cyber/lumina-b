@@ -83,7 +83,7 @@ Un keystore de release **a déjà été créé et vérifié** (généré avec `k
 | Fichier base64 | `my-upload-key.jks.base64` (pour le secret `KEYSTORE_BASE64`) |
 | Alias | `upload` |
 | Clé | RSA 4096, SHA384withRSA, validité 30 ans (2026-11-04 → 2056-10-27) |
-| Empreinte SHA-256 | `D0:27:13:1B:71:B1:ED:54:08:CC:3B:C0:2A:D9:53:95:4D:65:51:70:E1:3B:6B:86:4D:C5:F1:37:4D:09:D0:E6` |
+| Empreinte SHA-256 | `D7:47:98:61:7B:6F:AD:B4:16:6C:87:D3:57:C4:06:D2:A5:5F:9C:3B:33:54:2A:73:1B:5A:1F:EF:A8:08:2E:A0` |
 | Mots de passe | dans `keystore-credentials.txt` et `keystore.properties` (les deux ignorés par Git) |
 
 Vérifications effectuées : `keytool -list -v` (entrée `PrivateKeyEntry` valide) et

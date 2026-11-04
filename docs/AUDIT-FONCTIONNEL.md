@@ -194,7 +194,7 @@ remplacer par de vraies `Migration` avant une version grand public.
    (défauts `1` / `"1.0"` inchangés : AI Studio n'est pas impacté).
 6. **Signature opérationnelle** : keystore de release généré et vérifié
    (`my-upload-key.jks`, PKCS12, alias `upload`, RSA 4096, SHA-256
-   `D0:27:13:1B:71:B1:ED:54:08:CC:3B:C0:2A:D9:53:95:4D:65:51:70:E1:3B:6B:86:4D:C5:F1:37:4D:09:D0:E6`),
+   `D7:47:98:61:7B:6F:AD:B4:16:6C:87:D3:57:C4:06:D2:A5:5F:9C:3B:33:54:2A:73:1B:5A:1F:EF:A8:08:2E:A0`),
    `keystore.properties` lu par le build, scripts `build-release.sh` et `set-github-secrets.sh`.
 7. **Android 12** : écran de démarrage natif (`values-v31/themes.xml`), compatibilité vérifiée
    sur la plage Android 7 → 16, `minSdk` paramétrable (`MIN_SDK=31`) sans toucher au code.
