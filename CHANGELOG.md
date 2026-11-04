@@ -1,5 +1,30 @@
 # Lumina — journal des versions
 
+## v1.3.1 — filtres rattachés, écritures modifiables
+
+### Historique : deux icônes de filtre dans la page
+- Les filtres ne sont plus un panneau dépliant qui pousse le contenu : **deux
+  icônes sont fixées à l'en-tête de la page** (période/nature/tri, et
+  caisse/catégorie/montant). Un appui ouvre une **liste flottante** ancrée à
+  l'icône, qui se referme d'un geste. Chaque icône porte une pastille avec le
+  nombre de filtres actifs.
+
+### Écritures modifiables
+- Un appui sur une opération de l'historique ouvre le formulaire **pré-rempli** :
+  intitulé, montant, nature, catégorie, caisse, date, note et justificatif
+  peuvent être corrigés. L'identité de l'écriture et l'auteur de la modification
+  sont conservés.
+- Les virements internes restent non modifiables (ils s'annulent d'un bloc).
+
+### Correction de calcul
+- Le filtre **montant minimum / maximum** comparait des centimes à des francs :
+  il multipliait la saisie par 100 et ne trouvait presque jamais rien. Il
+  travaille désormais dans la même unité que les écritures.
+
+### Navigation
+- **Membres** entre dans la barre du bas à la place d'*Exports* ; les rapports
+  restent accessibles par le menu ☰.
+
 ## v1.3.0 — une page, un plan, des fiches
 
 ### Défilement unifié
