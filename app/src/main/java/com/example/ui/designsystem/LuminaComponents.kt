@@ -62,14 +62,18 @@ fun HeroCard(
     deltaText: String? = null,
     isDeltaPositive: Boolean = true,
     deltaDescription: String? = null,
-    backgroundBrush: androidx.compose.ui.graphics.Brush? = LuminaTokens.HeroGradientIndigo,
-    spotShadowColor: Color = LuminaTokens.HeroSpotShadowIndigo,
+    backgroundBrush: androidx.compose.ui.graphics.Brush? = null,
+    spotShadowColor: Color? = null,
     ambientShadowColor: Color = LuminaTokens.HeroAmbientShadow,
     trailingBadge: @Composable (() -> Unit)? = null,
     nestedContent: @Composable (ColumnScope.() -> Unit)? = null,
     testTag: String = "hero_card"
 ) {
-    val isGradient = backgroundBrush != null
+    // Le dégradé suit l'accent choisi dans les paramètres de l'église.
+    val accentColor = MaterialTheme.colorScheme.primary
+    val resolvedBrush = backgroundBrush ?: LuminaTokens.heroGradient(accentColor)
+    val resolvedSpotShadow = spotShadowColor ?: LuminaTokens.heroSpotShadow(accentColor)
+    val isGradient = resolvedBrush != null
 
     LuminaCard(
         modifier = modifier
@@ -77,8 +81,8 @@ fun HeroCard(
             .testTag(testTag),
         shape = LuminaTokens.ShapeHero,
         elevation = LuminaCardElevation.HERO,
-        backgroundBrush = backgroundBrush,
-        spotShadowColor = spotShadowColor,
+        backgroundBrush = resolvedBrush,
+        spotShadowColor = resolvedSpotShadow,
         ambientShadowColor = ambientShadowColor
     ) {
         Column(

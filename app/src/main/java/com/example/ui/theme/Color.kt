@@ -32,11 +32,14 @@ val IncomeIndigoDark = Color(0xFF818CF8)
 val ExpenseMuted = Color(0xFF71717A)
 val ExpenseMutedDark = Color(0xFFA1A1AA)
 
-// Tokens de compatibilité alignés sur le style monochrome et accent indigo
-val IncomeGreen = Color(0xFF4338CA) // Indigo sombre
-val ExpenseRed = Color(0xFF71717A)  // Monochrome neutre
-val LuminaGold = Color(0xFF6366F1)  // Indigo éclatant
-val ExpenseBgLight = Color(0xFFF4F4F5)
-val ExpenseBgDark = Color(0xFF18181B)
-val IncomeBgLight = Color(0xFFEEF2FF)
-val IncomeBgDark = Color(0xFF1E1B4B)
+// Couleurs sémantiques : le vert signale une entrée / une hausse,
+// le rouge une sortie / une baisse. Elles ne dépendent pas de l'accent choisi.
+val IncomeGreen = Color(0xFF15803D)      // Vert forêt (texte et traits)
+val IncomeGreenLight = Color(0xFF22C55E) // Vert clair (barres, dégradés)
+val ExpenseRed = Color(0xFFB91C1C)       // Rouge profond (texte et traits)
+val ExpenseRedLight = Color(0xFFEF4444)  // Rouge clair (barres, dégradés)
+val LuminaGold = Color(0xFFB45309)       // Ambre (alertes douces)
+val ExpenseBgLight = Color(0xFFFEF2F2)
+val ExpenseBgDark = Color(0xFF2A1215)
+val IncomeBgLight = Color(0xFFF0FDF4)
+val IncomeBgDark = Color(0xFF0F2417)

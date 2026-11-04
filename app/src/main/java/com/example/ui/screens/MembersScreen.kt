@@ -39,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,15 +66,34 @@ fun MembersScreen(
     onAddMember: (MemberEntity) -> Unit,
     onUpdateMember: (MemberEntity) -> Unit,
     onDeleteMember: (MemberEntity) -> Unit,
+    createSignal: Int = 0,
     modifier: Modifier = Modifier
 ) {
     var query by remember { mutableStateOf("") }
+    var selectedMember by remember { mutableStateOf<MemberEntity?>(null) }
     var editing by remember { mutableStateOf<MemberEntity?>(null) }
     var showForm by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<MemberEntity?>(null) }
 
     val filtered = remember(members, query) { members.filter { it.matches(query) } }
 
+    // Le bouton flottant de l'application ouvre directement la création
+    LaunchedEffect(createSignal) {
+        if (createSignal > 0) {
+            editing = null
+            showForm = true
+        }
+    }
+
+    val detail = selectedMember
+    if (detail != null) {
+        MemberDetailScreen(
+            member = members.firstOrNull { it.id == detail.id } ?: detail,
+            onBack = { selectedMember = null },
+            onEdit = { editing = detail; showForm = true },
+            onDelete = { pendingDelete = detail }
+        )
+    } else {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -168,12 +188,14 @@ fun MembersScreen(
                 items(filtered, key = { it.id }) { member ->
                     MemberRow(
                         member = member,
+                        onOpen = { selectedMember = member },
                         onEdit = { editing = member; showForm = true },
                         onDelete = { pendingDelete = member }
                     )
                 }
             }
         }
+    }
     }
 
     if (showForm) {
@@ -189,32 +211,50 @@ fun MembersScreen(
     }
 
     pendingDelete?.let { member ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("Retirer ce membre ?") },
-            text = { Text("La fiche de ${member.fullName} sera supprimée du registre.") },
-            confirmButton = {
-                TextButton(onClick = { onDeleteMember(member); pendingDelete = null }) {
-                    Text("Supprimer", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("Annuler") }
+        DeleteMemberConfirm(
+            member = member,
+            onDismiss = { pendingDelete = null },
+            onConfirm = {
+                onDeleteMember(member)
+                if (selectedMember?.id == member.id) selectedMember = null
+                pendingDelete = null
             }
         )
     }
 }
 
 @Composable
+private fun DeleteMemberConfirm(
+    member: MemberEntity,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Retirer ce membre ?") },
+        text = { Text("La fiche de ${member.fullName} sera supprimée du registre.") },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text("Supprimer", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Annuler") }
+        }
+    )
+}
+
+@Composable
 private fun MemberRow(
     member: MemberEntity,
+    onOpen: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onEdit() }
+            .clickable { onOpen() }
             .testTag("member_card_${member.id}"),
         shape = LuminaTokens.ShapeSubCard,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))

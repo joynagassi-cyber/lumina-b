@@ -40,26 +40,41 @@ import com.example.util.AmountDisplayMode
 import com.example.util.CurrencyFormatter
 import java.util.Locale
 
-// Palette monochrome et indigo sombre épurée
-private val CategoryPalette = listOf(
-    Color(0xFF4338CA), // Indigo Principal
-    Color(0xFF6366F1), // Indigo Clair
-    Color(0xFF312E81), // Indigo Sombre
-    Color(0xFFA1A1AA), // Zinc Clair
-    Color(0xFF71717A), // Zinc Moyen
-    Color(0xFF52525B), // Zinc Sombre
-    Color(0xFF818CF8), // Indigo Pastel
-    Color(0xFF3F3F46)  // Ardoise Monochrome
+// Palettes sémantiques : rouge pour les sorties, vert pour les entrées.
+private val ExpensePalette = listOf(
+    Color(0xFFB91C1C), // Rouge profond
+    Color(0xFFDC2626), // Rouge
+    Color(0xFFEF4444), // Rouge clair
+    Color(0xFFF87171), // Rouge pastel
+    Color(0xFF7F1D1D), // Bordeaux sombre
+    Color(0xFFFDA4AF), // Rose
+    Color(0xFF991B1B), // Rouge brun
+    Color(0xFFFCA5A5)  // Rouge très clair
 )
+
+private val IncomePalette = listOf(
+    Color(0xFF15803D), // Vert profond
+    Color(0xFF16A34A), // Vert
+    Color(0xFF22C55E), // Vert clair
+    Color(0xFF4ADE80), // Vert pastel
+    Color(0xFF065F46), // Émeraude sombre
+    Color(0xFF86EFAC), // Vert très clair
+    Color(0xFF047857), // Émeraude
+    Color(0xFFA7F3D0)  // Menthe
+)
+
+private fun paletteFor(isExpense: Boolean) = if (isExpense) ExpensePalette else IncomePalette
 
 @Composable
 fun CategoryDistributionCard(
     categoryTotals: Map<String, Long>,
     title: String,
     displayMode: AmountDisplayMode = AmountDisplayMode.STANDARD,
+    isExpense: Boolean = true,
     modifier: Modifier = Modifier
 ) {
     val totalCents = categoryTotals.values.sum()
+    val palette = paletteFor(isExpense)
 
     Card(
         modifier = modifier
@@ -117,7 +132,8 @@ fun CategoryDistributionCard(
                     ) {
                         CategoryDonutChart(
                             categories = categoryTotals,
-                            totalCents = totalCents
+                            totalCents = totalCents,
+                            palette = palette
                         )
                         Text(
                             text = "${categoryTotals.size} cat.",
@@ -135,7 +151,7 @@ fun CategoryDistributionCard(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         categoryTotals.entries.take(4).forEachIndexed { index, entry ->
-                            val color = CategoryPalette[index % CategoryPalette.size]
+                            val color = palette[index % palette.size]
                             val percent = (entry.value.toDouble() / totalCents.toDouble()) * 100.0
                             val amountStr = CurrencyFormatter.format(entry.value, displayMode)
 
@@ -193,6 +209,7 @@ fun CategoryDistributionCard(
 fun CategoryDonutChart(
     categories: Map<String, Long>,
     totalCents: Long,
+    palette: List<Color> = ExpensePalette,
     modifier: Modifier = Modifier
 ) {
     val animatedProgress = remember { Animatable(0f) }
@@ -215,7 +232,7 @@ fun CategoryDonutChart(
         categories.entries.forEachIndexed { index, entry ->
             val slicePercent = (entry.value.toDouble() / totalCents.toDouble()).toFloat()
             val sweepAngle = slicePercent * 360f * animatedProgress.value
-            val color = CategoryPalette[index % CategoryPalette.size]
+            val color = palette[index % palette.size]
 
             drawArc(
                 color = color,

@@ -70,14 +70,24 @@ object LuminaTokens {
     // ==========================================
     // Dégradés & Ombres Héro (Bleu Indigo Électrique)
     // ==========================================
-    val HeroGradientIndigo = androidx.compose.ui.graphics.Brush.linearGradient(
-        colors = listOf(
-            androidx.compose.ui.graphics.Color(0xFF3730A3), // Indigo intense
-            androidx.compose.ui.graphics.Color(0xFF4338CA), // Indigo électrique
-            androidx.compose.ui.graphics.Color(0xFF1E1B4B)  // Bleu nuit profond
+    /**
+     * Dégradé des cartes d'en-tête, calculé à partir de la couleur d'accent
+     * choisie par l'église : éclairci en haut à gauche, couleur pleine au
+     * centre, assombri en bas à droite. Chaque accent obtient ainsi un dégradé
+     * cohérent et toujours lisible (texte blanc).
+     */
+    fun heroGradient(accent: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Brush =
+        androidx.compose.ui.graphics.Brush.linearGradient(
+            colors = listOf(
+                androidx.compose.ui.graphics.lerp(accent, androidx.compose.ui.graphics.Color.White, 0.16f),
+                accent,
+                androidx.compose.ui.graphics.lerp(accent, androidx.compose.ui.graphics.Color.Black, 0.58f)
+            )
         )
-    )
-    val HeroSpotShadowIndigo = androidx.compose.ui.graphics.Color(0x663730A3)
+
+    fun heroSpotShadow(accent: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
+        accent.copy(alpha = 0.42f)
+
     val HeroAmbientShadow = androidx.compose.ui.graphics.Color(0x44000000)
 }
 
