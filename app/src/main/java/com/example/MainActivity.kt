@@ -102,9 +102,11 @@ import com.example.ui.screens.BudgetScreen
 import com.example.ui.screens.CaissesScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ExportScreen
+import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.MembersScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.SettingsScreen
+import com.example.ui.screens.TeamSyncScreen
 import com.example.ui.screens.TimelineScreen
 import com.example.ui.theme.LuminaTheme
 import com.example.ui.theme.ThemeMode
@@ -119,6 +121,7 @@ enum class AppScreen(val title: String) {
     MEMBERS("Membres"),
     TIMELINE("Historique"),
     EXPORT("Exports"),
+    TEAM("Équipe & partage"),
     SETTINGS("Paramètres")
 }
 
@@ -135,7 +138,8 @@ class MainActivity : ComponentActivity() {
             database.budgetDao(),
             database.cashRegisterDao(),
             database.churchProfileDao(),
-            database.memberDao()
+            database.memberDao(),
+            database.userDao()
         )
 
         setContent {
@@ -206,6 +210,17 @@ fun LuminaApp(
         OnboardingScreen(
             initialProfile = uiState.profile,
             onFinish = { profile -> viewModel.completeOnboardingFromScreen(profile) }
+        )
+        return
+    }
+
+    // Ouverture de session locale : chacun choisit son nom et saisit son code
+    if (uiState.currentUser == null) {
+        LoginScreen(
+            churchName = uiState.profile.churchName,
+            users = uiState.users,
+            onLogin = { id, pin -> viewModel.login(id, pin) },
+            onCreateFirstUser = { name, role, pin -> viewModel.createFirstUser(name, role, pin) }
         )
         return
     }
@@ -406,6 +421,19 @@ fun LuminaApp(
                 )
 
                 NavigationDrawerItem(
+                    label = { Text("Équipe & partage", fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Default.Groups, contentDescription = null) },
+                    selected = currentScreen == AppScreen.TEAM,
+                    onClick = {
+                        currentScreen = AppScreen.TEAM
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier
+                        .padding(NavigationDrawerItemDefaults.ItemPadding)
+                        .testTag("drawer_item_team")
+                )
+
+                NavigationDrawerItem(
                     label = { Text("Paramètres", fontWeight = FontWeight.SemiBold) },
                     icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                     selected = currentScreen == AppScreen.SETTINGS,
@@ -456,6 +484,7 @@ fun LuminaApp(
                                 AppScreen.TIMELINE -> "Historique"
                                 AppScreen.MEMBERS -> "Membres"
                                 AppScreen.EXPORT -> "Rapports"
+                                AppScreen.TEAM -> "Équipe & partage"
                                 AppScreen.SETTINGS -> "Paramètres"
                             },
                             fontWeight = FontWeight.Bold,
@@ -672,6 +701,23 @@ fun LuminaApp(
                         onPeriodSelected = { viewModel.setPeriod(it) },
                         onExportPdf = { viewModel.exportPdf(context) },
                         onExportCsv = { viewModel.exportCsv(context) }
+                    )
+                    AppScreen.TEAM -> TeamSyncScreen(
+                        uiState = uiState,
+                        onAddUser = { name, role, pin -> viewModel.addUser(name, role, pin) },
+                        onUpdateUser = { user, name, role, pin -> viewModel.updateUser(user, name, role, pin) },
+                        onDeleteUser = { user -> viewModel.deleteUser(user) },
+                        onExport = { ctx, phrase, onReady -> viewModel.exportSyncFile(ctx, phrase, onReady) },
+                        onImport = { ctx, uri, phrase -> viewModel.importSyncFile(ctx, uri, phrase) },
+                        onShareFile = { ctx, file ->
+                            com.example.export.ReportExporter.shareFile(
+                                ctx,
+                                file,
+                                "application/octet-stream",
+                                "Échange de données Lumina"
+                            )
+                        },
+                        onLogout = { viewModel.logout() }
                     )
                     AppScreen.SETTINGS -> SettingsScreen(
                         uiState = uiState,

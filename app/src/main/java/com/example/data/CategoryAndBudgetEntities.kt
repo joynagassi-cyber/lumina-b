@@ -17,7 +17,10 @@ data class CategoryEntity(
     val type: TransactionType,
     val colorHex: String = "#0F766E",
     val isDefault: Boolean = false,
-    val iconName: String = ""
+    val iconName: String = "",
+    val uid: String = java.util.UUID.randomUUID().toString(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val isDeleted: Boolean = false
 )
 
 @Entity(

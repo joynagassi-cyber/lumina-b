@@ -12,6 +12,10 @@ import com.example.data.MemberEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionRepository
 import com.example.data.TransactionType
+import com.example.data.UserEntity
+import com.example.data.UserRole
+import com.example.sync.SyncManager
+import com.example.util.PinHasher
 import com.example.export.ReportExporter
 import com.example.ui.theme.ThemeMode
 import com.example.util.AmountDisplayMode
@@ -135,8 +139,13 @@ data class FinancialUiState(
     val currencySymbol: String = "FCFA",
     val profile: ChurchProfileEntity = ChurchProfileEntity(),
     val members: List<MemberEntity> = emptyList(),
+    val users: List<UserEntity> = emptyList(),
+    val currentUser: UserEntity? = null,
     val bilan: BilanSnapshot = BilanSnapshot(),
     val activeFilterCount: Int = 0,
+    val canWrite: Boolean = true,
+    val canDelete: Boolean = true,
+    val canManageUsers: Boolean = true,
     val isLoading: Boolean = false
 )
 
@@ -161,6 +170,7 @@ class FinancialViewModel(
     private val _themeMode = MutableStateFlow<ThemeMode?>(null)
     private val _amountDisplayMode = MutableStateFlow<AmountDisplayMode?>(null)
     private val _selectedCashRegisterId = MutableStateFlow<Long?>(null)
+    private val _currentUser = MutableStateFlow<UserEntity?>(null)
 
     private val _eventFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val eventFlow: SharedFlow<String> = _eventFlow.asSharedFlow()
@@ -185,7 +195,9 @@ class FinancialViewModel(
         _selectedCashRegisterId,
         _minAmountCents,
         _maxAmountCents,
-        _sortMode
+        _sortMode,
+        repository.allUsers,
+        _currentUser
     ) { args: Array<Any?> ->
         @Suppress("UNCHECKED_CAST")
         val allTx = args[0] as List<TransactionEntity>
@@ -209,6 +221,9 @@ class FinancialViewModel(
         val minAmount = args[14] as Long
         val maxAmount = args[15] as Long
         val sortMode = args[16] as SortMode
+        @Suppress("UNCHECKED_CAST")
+        val users = args[17] as List<UserEntity>
+        val currentUser = args[18] as? UserEntity
 
         val themeMode = themeOverride ?: runCatching { ThemeMode.valueOf(profile.themeMode) }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -448,6 +463,11 @@ class FinancialViewModel(
             members = allMembers,
             bilan = bilan,
             activeFilterCount = activeFilterCount,
+            users = users,
+            currentUser = currentUser,
+            canWrite = currentUser?.roleValue?.canWrite ?: true,
+            canDelete = currentUser?.roleValue?.canDelete ?: true,
+            canManageUsers = currentUser?.roleValue?.canManageUsers ?: true,
             isLoading = false
         )
     }.stateIn(
@@ -479,6 +499,156 @@ class FinancialViewModel(
         _maxAmountCents.value = 0L
         _sortMode.value = SortMode.DATE_DESC
         _selectedCashRegisterId.value = null
+    }
+
+    // ==========================================
+    // Utilisateurs de l'appareil (rôles & PIN)
+    // ==========================================
+    fun login(userId: Long, pin: String) {
+        viewModelScope.launch {
+            val user = repository.getUserById(userId)
+            if (user == null) {
+                _eventFlow.emit("Utilisateur introuvable")
+                return@launch
+            }
+            val ok = when {
+                !user.hasPin -> pin.isBlank()
+                else -> PinHasher.verify(pin, user.pinSalt, user.pinHash)
+            }
+            if (!ok) {
+                _eventFlow.emit("Code incorrect")
+                return@launch
+            }
+            repository.touchUserLogin(user.id)
+            _currentUser.value = user.copy(lastLoginAt = System.currentTimeMillis())
+            _eventFlow.emit("Bienvenue ${user.displayName}")
+        }
+    }
+
+    /** Crée le premier accès du téléphone et ouvre directement la session. */
+    fun createFirstUser(displayName: String, role: UserRole, pin: String) {
+        viewModelScope.launch {
+            val name = displayName.trim()
+            if (name.isBlank() || pin.length < 4) {
+                _eventFlow.emit("Indiquez un nom et un code d'au moins 4 chiffres")
+                return@launch
+            }
+            val salt = PinHasher.newSalt()
+            val id = repository.saveUser(
+                UserEntity(
+                    displayName = name,
+                    role = role.name,
+                    pinSalt = salt,
+                    pinHash = PinHasher.hash(pin, salt)
+                )
+            )
+            _currentUser.value = repository.getUserById(id)
+            _eventFlow.emit("Bienvenue $name")
+        }
+    }
+
+    fun logout() {
+        _currentUser.value = null
+    }
+
+    fun addUser(displayName: String, role: UserRole, pin: String) {
+        viewModelScope.launch {
+            val name = displayName.trim()
+            if (name.isBlank()) {
+                _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
+                return@launch
+            }
+            val salt = PinHasher.newSalt()
+            repository.saveUser(
+                UserEntity(
+                    displayName = name,
+                    role = role.name,
+                    pinSalt = salt,
+                    pinHash = if (pin.isBlank()) "" else PinHasher.hash(pin, salt)
+                )
+            )
+            _eventFlow.emit("$name ajouté(e) comme ${role.label}")
+        }
+    }
+
+    fun updateUser(user: UserEntity, displayName: String, role: UserRole, newPin: String) {
+        viewModelScope.launch {
+            val name = displayName.trim()
+            if (name.isBlank()) {
+                _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
+                return@launch
+            }
+            val salt = if (newPin.isBlank()) user.pinSalt else PinHasher.newSalt()
+            repository.saveUser(
+                user.copy(
+                    displayName = name,
+                    role = role.name,
+                    pinSalt = salt,
+                    pinHash = when {
+                        newPin.isBlank() -> user.pinHash
+                        else -> PinHasher.hash(newPin, salt)
+                    },
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+            if (_currentUser.value?.id == user.id) {
+                _currentUser.value = repository.getUserById(user.id)
+            }
+            _eventFlow.emit("$name mis(e) à jour")
+        }
+    }
+
+    fun deleteUser(user: UserEntity) {
+        viewModelScope.launch {
+            if (repository.getUsersCount() <= 1) {
+                _eventFlow.emit("Il doit rester au moins un utilisateur")
+                return@launch
+            }
+            repository.deleteUser(user.id)
+            if (_currentUser.value?.id == user.id) _currentUser.value = null
+            _eventFlow.emit("${user.displayName} retiré(e)")
+        }
+    }
+
+    // ==========================================
+    // Synchronisation par fichier chiffré
+    // ==========================================
+    fun exportSyncFile(context: Context, passphrase: String, onReady: (java.io.File) -> Unit) {
+        viewModelScope.launch {
+            try {
+                if (passphrase.length < 6) {
+                    _eventFlow.emit("La phrase de passe doit contenir au moins 6 caractères")
+                    return@launch
+                }
+                val state = uiState.value
+                val directory = java.io.File(context.cacheDir, "echanges")
+                val file = SyncManager.exportFile(
+                    context = context,
+                    repository = repository,
+                    profile = state.profile,
+                    passphrase = passphrase,
+                    authorName = state.currentUser?.displayName ?: "",
+                    directory = directory
+                )
+                onReady(file)
+                _eventFlow.emit("Fichier d'échange prêt (${state.periodTransactions.size} écritures de la période)")
+            } catch (e: Exception) {
+                _eventFlow.emit("Export impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun importSyncFile(context: Context, uri: android.net.Uri, passphrase: String) {
+        viewModelScope.launch {
+            try {
+                val report = SyncManager.importFile(context, repository, uri, passphrase)
+                val message = "Fusion avec ${report.sourceChurch.ifBlank { "un autre appareil" }} : ${report.summary()}"
+                _eventFlow.emit(message)
+                _notificationFlow.emit(NotificationEvent("Synchronisation terminée", message))
+            } catch (e: Exception) {
+                _eventFlow.emit("Import impossible : ${e.localizedMessage}")
+            }
+        }
     }
 
     // ==========================================
@@ -843,6 +1013,10 @@ class FinancialViewModel(
         receiptPhotoUri: String = ""
     ) {
         viewModelScope.launch {
+            if (!uiState.value.canWrite) {
+                _eventFlow.emit("Votre profil est en lecture seule")
+                return@launch
+            }
             val entity = TransactionEntity(
                 title = title.trim(),
                 type = type,
@@ -854,7 +1028,8 @@ class FinancialViewModel(
                 note = note.trim(),
                 cashRegisterId = cashRegisterId,
                 cashRegisterName = cashRegisterName,
-                receiptPhotoUri = receiptPhotoUri
+                receiptPhotoUri = receiptPhotoUri,
+                updatedBy = uiState.value.currentUser?.displayName ?: ""
             )
             repository.insert(entity)
 

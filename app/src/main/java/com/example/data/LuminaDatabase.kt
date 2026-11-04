@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
@@ -17,9 +18,10 @@ import kotlinx.coroutines.launch
         BudgetEntity::class,
         CashRegisterEntity::class,
         ChurchProfileEntity::class,
-        MemberEntity::class
+        MemberEntity::class,
+        UserEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -30,6 +32,7 @@ abstract class LuminaDatabase : RoomDatabase() {
     abstract fun cashRegisterDao(): CashRegisterDao
     abstract fun churchProfileDao(): ChurchProfileDao
     abstract fun memberDao(): MemberDao
+    abstract fun userDao(): UserDao
 
     companion object {
         @Volatile
@@ -43,10 +46,66 @@ abstract class LuminaDatabase : RoomDatabase() {
                     "lumina_financial.db"
                 )
                 .addCallback(LuminaDatabaseCallback(scope))
+                .addMigrations(MIGRATION_5_6)
+                // Filet de sécurité pour les installations très anciennes (v4 et avant)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        /**
+         * Passage à la version 6 : identité stable des enregistrements (`uid`),
+         * horodatage de dernière modification et tombes de suppression.
+         *
+         * Aucune donnée existante n'est perdue : les colonnes sont ajoutées avec
+         * une valeur neutre, puis chaque ligne reçoit un identifiant unique.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // --- Écritures ---
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `uid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `updatedBy` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isDeleted` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE `transactions` SET `uid` = lower(hex(randomblob(16))) WHERE `uid` = ''")
+
+                // --- Catégories ---
+                db.execSQL("ALTER TABLE `categories` ADD COLUMN `uid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `categories` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `categories` ADD COLUMN `isDeleted` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE `categories` SET `uid` = lower(hex(randomblob(16))) WHERE `uid` = ''")
+
+                // --- Caisses ---
+                db.execSQL("ALTER TABLE `cash_registers` ADD COLUMN `uid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `cash_registers` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `cash_registers` ADD COLUMN `isDeleted` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE `cash_registers` SET `uid` = lower(hex(randomblob(16))) WHERE `uid` = ''")
+
+                // --- Membres ---
+                db.execSQL("ALTER TABLE `members` ADD COLUMN `uid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `members` ADD COLUMN `updatedAt` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `members` ADD COLUMN `isDeleted` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE `members` SET `uid` = lower(hex(randomblob(16))) WHERE `uid` = ''")
+
+                // --- Personnes autorisées sur l'appareil ---
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `app_users` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`uid` TEXT NOT NULL, " +
+                        "`displayName` TEXT NOT NULL, " +
+                        "`role` TEXT NOT NULL, " +
+                        "`pinHash` TEXT NOT NULL, " +
+                        "`pinSalt` TEXT NOT NULL, " +
+                        "`isActive` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`lastLoginAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_app_users_uid` ON `app_users` (`uid`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_app_users_displayName` ON `app_users` (`displayName`)")
             }
         }
 
