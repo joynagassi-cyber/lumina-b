@@ -16,3 +16,13 @@
 local.properties
 .env
 debug.keystore
+
+# --- Signature / secrets (ne JAMAIS committer) ---
+*.jks
+*.keystore
+*.p12
+*.jks.base64
+my-upload-key.jks
+keystore.properties
+release-notes.md
+dist/

@@ -165,7 +165,7 @@ fun SettingsScreen(
                 // Trio métriques système
                 StatTrio(
                     item1Label = "Écritures",
-                    item1Value = "${uiState.transactions.size}",
+                    item1Value = "${uiState.periodTransactions.size}",
                     item1Color = Color.White,
                     item2Label = "Caisses",
                     item2Value = "${uiState.cashRegisters.size}",

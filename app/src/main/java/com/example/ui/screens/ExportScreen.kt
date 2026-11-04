@@ -116,7 +116,7 @@ fun ExportScreen(
         HeroCard(
             eyebrow = "Synthèse à Exporter • ${uiState.selectedPeriod.label.uppercase()}",
             primaryAmount = CurrencyFormatter.format(uiState.netBalanceCents, uiState.amountDisplayMode),
-            deltaText = "${uiState.transactions.size} opérations",
+            deltaText = "${uiState.periodTransactions.size} opérations",
             isDeltaPositive = uiState.netBalanceCents >= 0,
             deltaDescription = uiState.selectedCashRegisterName,
             testTag = "export_summary_card",

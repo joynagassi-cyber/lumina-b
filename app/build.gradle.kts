@@ -16,8 +16,10 @@ android {
     applicationId = "com.aistudio.applet.hfkylu"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    // Surchargeables par l'environnement (utile en CI) :
+    //   VERSION_CODE=42 VERSION_NAME=1.2.3 ./gradlew assembleRelease
+    versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+    versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

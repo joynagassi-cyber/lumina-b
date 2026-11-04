@@ -69,7 +69,11 @@ data class CashRegisterSummary(
 )
 
 data class FinancialUiState(
+    // Liste filtrée (période + caisse + type + recherche) : usage Timeline
     val transactions: List<TransactionEntity> = emptyList(),
+    // Liste de la période et de la caisse sélectionnées, sans filtre de type/recherche :
+    // source de vérité des totaux, des exports PDF/CSV et du Dashboard.
+    val periodTransactions: List<TransactionEntity> = emptyList(),
     val totalIncomeCents: Long = 0,
     val totalExpenseCents: Long = 0,
     val netBalanceCents: Long = 0,
@@ -304,6 +308,7 @@ class FinancialViewModel(
 
         FinancialUiState(
             transactions = filteredTx,
+            periodTransactions = periodBaseTx,
             totalIncomeCents = totalIncome,
             totalExpenseCents = totalExpense,
             netBalanceCents = netBalance,
@@ -581,7 +586,7 @@ class FinancialViewModel(
                 val pdfFile = ReportExporter.generatePdfReport(
                     context = context,
                     periodLabel = "${state.selectedPeriod.label} (${state.selectedCashRegisterName})",
-                    transactions = state.transactions,
+                    transactions = state.periodTransactions,
                     totalIncomeCents = state.totalIncomeCents,
                     totalExpenseCents = state.totalExpenseCents,
                     netBalanceCents = state.netBalanceCents
@@ -606,7 +611,7 @@ class FinancialViewModel(
                 val csvFile = ReportExporter.generateCsvExport(
                     context = context,
                     periodLabel = "${state.selectedPeriod.label} (${state.selectedCashRegisterName})",
-                    transactions = state.transactions,
+                    transactions = state.periodTransactions,
                     totalIncomeCents = state.totalIncomeCents,
                     totalExpenseCents = state.totalExpenseCents,
                     netBalanceCents = state.netBalanceCents

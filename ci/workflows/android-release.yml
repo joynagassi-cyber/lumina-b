@@ -1,0 +1,175 @@
+name: Android Release (APK signé + AAB)
+
+# Déclenchement :
+#   - push d'un tag  v1.2.3  → build signé + GitHub Release
+#   - manuel (Actions > Run workflow)
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "versionName (ex. 1.2.0) — laisser vide pour 1.0.<run_number>"
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GRADLE_OPTS: >-
+    -Dorg.gradle.jvmargs=-Xmx4g
+    -Dorg.gradle.daemon=false
+  JAVA_VERSION: '21'
+  KEYSTORE_FILE: my-upload-key.jks
+
+jobs:
+  release:
+    name: Build signé (release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Licences + plateformes
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "build-tools;36.0.0" > /dev/null || true
+          sdkmanager "platforms;android-36.1" > /dev/null 2>&1 \
+            || sdkmanager "platforms;android-36" > /dev/null 2>&1 \
+            || echo "::warning::Plateforme 36 non préinstallée — AGP tentera le téléchargement automatique."
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Keystores (debug + release)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          bash scripts/generate-debug-keystore.sh
+
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 manquant. Voir docs/SIGNING-ET-RELEASE.md (lancer d'abord le workflow « Bootstrap keystore » ou scripts/generate-keystore.sh)."
+            exit 1
+          fi
+          if [ -z "${STORE_PASSWORD:-}" ]; then
+            echo "::error::Secret STORE_PASSWORD manquant."
+            exit 1
+          fi
+
+          echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_FILE"
+          chmod 600 "$KEYSTORE_FILE"
+          echo "KEYSTORE_PATH=$GITHUB_WORKSPACE/$KEYSTORE_FILE" >> "$GITHUB_ENV"
+
+          echo "▶ Contenu du keystore :"
+          keytool -list -keystore "$KEYSTORE_FILE" -storepass "$STORE_PASSWORD" | sed -n '2,10p'
+          if ! keytool -list -keystore "$KEYSTORE_FILE" -storepass "$STORE_PASSWORD" | grep -q "upload"; then
+            echo "::error::L'alias « upload » est absent du keystore. app/build.gradle.kts impose keyAlias = \"upload\"."
+            exit 1
+          fi
+
+      - name: Calcul de la version
+        id: version
+        env:
+          INPUT_VERSION_NAME: ${{ inputs.version_name }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            VERSION_NAME="${GITHUB_REF_NAME#v}"
+          elif [ -n "${INPUT_VERSION_NAME:-}" ]; then
+            VERSION_NAME="$INPUT_VERSION_NAME"
+          else
+            VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          fi
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          echo "VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "Version : $VERSION_NAME (code ${GITHUB_RUN_NUMBER})"
+
+      - name: Build release signé (APK + AAB)
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew clean assembleRelease bundleRelease --stacktrace
+
+      - name: Vérification de la signature
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          echo "▶ APK : $APK"
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK"
+          echo "▶ Empreinte du certificat de signature :"
+          keytool -list -keystore "$KEYSTORE_FILE" -storepass "$STORE_PASSWORD" | grep -i "SHA" || true
+
+      - name: Préparer les livrables
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          AAB=$(ls app/build/outputs/bundle/release/*.aab | head -1)
+          cp "$APK" "dist/Lumina-${VERSION_NAME}-${VERSION_CODE}.apk"
+          cp "$AAB" "dist/Lumina-${VERSION_NAME}-${VERSION_CODE}.aab"
+          cd dist
+          sha256sum ./* > SHA256SUMS.txt
+          ls -lh
+
+      - name: Publier les artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: lumina-${{ steps.version.outputs.version_name }}-signe
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Supprimer le keystore du runner
+        if: always()
+        run: rm -f "$KEYSTORE_FILE" "$KEYSTORE_FILE.base64" debug.keystore || true
+
+      - name: GitHub Release (tags uniquement)
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          {
+            echo "Build automatique signé de Lumina-beta."
+            echo
+            echo "- versionName : ${VERSION_NAME}"
+            echo "- versionCode : ${VERSION_CODE}"
+            echo "- APK universel signé (installation directe sur téléphone)"
+            echo "- AAB signé (upload sur Google Play Console)"
+            echo
+            echo 'Vérification de l'"'"'intégrité : `sha256sum -c SHA256SUMS.txt`'
+          } > release-notes.md
+
+          gh release create "$TAG" dist/* \
+            --title "Lumina-beta ${VERSION_NAME}" \
+            --notes-file release-notes.md \
+            --verify-tag \
+          || gh release upload "$TAG" dist/* --clobber
