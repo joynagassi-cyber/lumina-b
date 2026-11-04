@@ -1072,6 +1072,49 @@ class FinancialViewModel(
     // ==========================================
     // Transactions
     // ==========================================
+    /** Modifie une écriture existante (l'identité stable est conservée). */
+    fun updateTransaction(
+        id: Long,
+        title: String,
+        type: TransactionType,
+        amountCents: Long,
+        category: String,
+        timestamp: Long,
+        note: String,
+        cashRegisterId: Long,
+        cashRegisterName: String,
+        receiptPhotoUri: String = ""
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            val existing = repository.getTransactionById(id)
+            if (existing == null) {
+                _eventFlow.emit("Opération introuvable")
+                return@launch
+            }
+            if (amountCents <= 0L || title.isBlank()) {
+                _eventFlow.emit("Intitulé et montant sont obligatoires")
+                return@launch
+            }
+            repository.update(
+                existing.copy(
+                    title = title.trim(),
+                    type = type,
+                    amountCents = amountCents,
+                    category = category.trim().ifBlank { existing.category },
+                    timestamp = timestamp,
+                    note = note.trim(),
+                    cashRegisterId = cashRegisterId,
+                    cashRegisterName = cashRegisterName,
+                    receiptPhotoUri = receiptPhotoUri,
+                    updatedAt = System.currentTimeMillis(),
+                    updatedBy = uiState.value.currentUser?.displayName ?: ""
+                )
+            )
+            _eventFlow.emit("Opération \"${title.trim()}\" mise à jour")
+        }
+    }
+
     fun addTransaction(
         title: String,
         type: TransactionType,

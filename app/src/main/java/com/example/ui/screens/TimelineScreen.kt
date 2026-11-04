@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,15 @@ import com.example.data.TransactionType
 import com.example.ui.FinancialUiState
 import com.example.ui.PeriodFilter
 import com.example.ui.SortMode
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterAlt
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.ui.components.CollapsibleFilters
 import com.example.ui.components.FinancialTimelineChart
 import com.example.ui.designsystem.GroupedCard
@@ -81,6 +91,7 @@ fun TimelineScreen(
     onTypeFilterSelected: (TransactionType?) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onDeleteTransaction: (Long) -> Unit,
+    onEditTransaction: (TransactionEntity) -> Unit = {},
     onSelectCaisseFilter: (Long?) -> Unit = {},
     onCategoryFilterSelected: (String?) -> Unit = {},
     onAmountRangeChange: (Long, Long) -> Unit = { _, _ -> },
@@ -89,8 +100,8 @@ fun TimelineScreen(
     modifier: Modifier = Modifier
 ) {
     var transactionToDelete by remember { mutableStateOf<TransactionEntity?>(null) }
-    var minAmountInput by remember { mutableStateOf(if (uiState.minAmountCents > 0) (uiState.minAmountCents / 100).toString() else "") }
-    var maxAmountInput by remember { mutableStateOf(if (uiState.maxAmountCents > 0) (uiState.maxAmountCents / 100).toString() else "") }
+    var minAmountInput by remember { mutableStateOf(if (uiState.minAmountCents > 0) uiState.minAmountCents.toString() else "") }
+    var maxAmountInput by remember { mutableStateOf(if (uiState.maxAmountCents > 0) uiState.maxAmountCents.toString() else "") }
 
     val dayHeaderFormat = remember { SimpleDateFormat("EEEE dd MMMM yyyy", Locale.FRANCE) }
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.FRANCE) }
@@ -124,60 +135,220 @@ fun TimelineScreen(
         )
     ) {
         item(key = "header") {
-            Column {
-                Text(
-                    text = "Historique",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold
-                )
-                Text(
-                    text = "${uiState.transactions.size} opération(s) • ${uiState.selectedCashRegisterName}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+            var openPanel by remember { mutableStateOf<Int?>(null) }
 
-        // Carte de synthèse : elle défile avec le reste de la page
-        item(key = "hero") {
-            HeroCard(
-                eyebrow = "PÉRIODE • ${uiState.selectedPeriod.label.uppercase()}",
-                primaryAmount = CurrencyFormatter.format(
-                    amount = uiState.netBalanceCents,
-                    mode = uiState.amountDisplayMode,
-                    withSign = true,
-                    isPositive = uiState.netBalanceCents >= 0
-                ),
-                deltaText = "${uiState.transactions.size} écritures",
-                isDeltaPositive = uiState.netBalanceCents >= 0,
-                deltaDescription = uiState.selectedCashRegisterName,
-                testTag = "timeline_hero_card",
-                nestedContent = {
-                    StatTrio(
-                        item1Label = "Entrées",
-                        item1Value = CurrencyFormatter.format(uiState.totalIncomeCents, uiState.amountDisplayMode),
-                        item1Color = Color(0xFF4ADE80),
-                        item2Label = "Sorties",
-                        item2Value = CurrencyFormatter.format(uiState.totalExpenseCents, uiState.amountDisplayMode),
-                        item2Color = Color(0xFFFF6B6B),
-                        item3Label = "Solde période",
-                        item3Value = CurrencyFormatter.format(
-                            amount = uiState.netBalanceCents,
-                            mode = uiState.amountDisplayMode,
-                            withSign = true,
-                            isPositive = uiState.netBalanceCents >= 0
-                        ),
-                        item3Color = if (uiState.netBalanceCents >= 0) Color(0xFF4ADE80) else Color(0xFFFF6B6B),
-                        containerColor = Color.White.copy(alpha = 0.14f),
-                        labelColor = Color.White.copy(alpha = 0.75f)
-                    )
+            // Deux filtres, deux icônes rattachées à la page (pas de boutons flottants).
+            val countPeriod = listOf(
+                uiState.selectedPeriod != PeriodFilter.CE_MOIS,
+                uiState.selectedTypeFilter != null,
+                uiState.sortMode != SortMode.DATE_DESC
+            ).count { it }
+            val countScope = listOf(
+                uiState.selectedCashRegisterId != null,
+                uiState.selectedCategoryFilter != null,
+                uiState.minAmountCents > 0L || uiState.maxAmountCents > 0L
+            ).count { it }
+
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Historique",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "${uiState.transactions.size} opération(s) • ${uiState.selectedCashRegisterName}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Box {
+                        FilterPageIcon(
+                            count = countPeriod,
+                            icon = Icons.Default.Tune,
+                            label = "Période, nature et tri",
+                            testTag = "filter_icon_period",
+                            onClick = { openPanel = if (openPanel == 1) null else 1 }
+                        )
+                        if (openPanel == 1) {
+                            Popup(
+                                alignment = Alignment.TopEnd,
+                                offset = IntOffset(0, 56),
+                                onDismissRequest = { openPanel = null },
+                                properties = PopupProperties(focusable = true)
+                            ) {
+                                FloatingFilterCard(
+                                    title = "Période, nature, tri",
+                                    onClose = { openPanel = null }
+                                ) {
+                                    Text("Période", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        PeriodFilter.values().forEach { period ->
+                                            FilterChip(
+                                                selected = uiState.selectedPeriod == period,
+                                                onClick = { onPeriodSelected(period) },
+                                                label = { Text(period.label, fontSize = 11.sp) },
+                                                shape = LuminaTokens.ShapePill
+                                            )
+                                        }
+                                    }
+
+                                    Text("Nature", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilterChip(
+                                            selected = uiState.selectedTypeFilter == null,
+                                            onClick = { onTypeFilterSelected(null) },
+                                            label = { Text("Tout", fontSize = 11.sp) },
+                                            shape = LuminaTokens.ShapePill
+                                        )
+                                        FilterChip(
+                                            selected = uiState.selectedTypeFilter == TransactionType.INCOME,
+                                            onClick = { onTypeFilterSelected(TransactionType.INCOME) },
+                                            label = { Text("Entrées", fontSize = 11.sp) },
+                                            shape = LuminaTokens.ShapePill
+                                        )
+                                        FilterChip(
+                                            selected = uiState.selectedTypeFilter == TransactionType.EXPENSE,
+                                            onClick = { onTypeFilterSelected(TransactionType.EXPENSE) },
+                                            label = { Text("Sorties", fontSize = 11.sp) },
+                                            shape = LuminaTokens.ShapePill
+                                        )
+                                    }
+
+                                    Text("Tri", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        SortMode.values().forEach { mode ->
+                                            FilterChip(
+                                                selected = uiState.sortMode == mode,
+                                                onClick = { onSortModeSelected(mode) },
+                                                label = { Text(mode.label, fontSize = 11.sp) },
+                                                shape = LuminaTokens.ShapePill
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Box {
+                        FilterPageIcon(
+                            count = countScope,
+                            icon = Icons.Default.FilterAlt,
+                            label = "Caisse, catégorie et montant",
+                            testTag = "filter_icon_scope",
+                            onClick = { openPanel = if (openPanel == 2) null else 2 }
+                        )
+                        if (openPanel == 2) {
+                            Popup(
+                                alignment = Alignment.TopEnd,
+                                offset = IntOffset(0, 56),
+                                onDismissRequest = { openPanel = null },
+                                properties = PopupProperties(focusable = true)
+                            ) {
+                                FloatingFilterCard(
+                                    title = "Caisse, catégorie, montant",
+                                    onClose = { openPanel = null }
+                                ) {
+                                    if (uiState.cashRegisters.isNotEmpty()) {
+                                        Text("Caisse", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            FilterChip(
+                                                selected = uiState.selectedCashRegisterId == null,
+                                                onClick = { onSelectCaisseFilter(null) },
+                                                label = { Text("Toutes", fontSize = 11.sp) },
+                                                shape = LuminaTokens.ShapePill
+                                            )
+                                            uiState.cashRegisters.forEach { reg ->
+                                                FilterChip(
+                                                    selected = uiState.selectedCashRegisterId == reg.id,
+                                                    onClick = { onSelectCaisseFilter(reg.id) },
+                                                    label = { Text(reg.name, fontSize = 11.sp) },
+                                                    shape = LuminaTokens.ShapePill
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Text("Catégorie", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        FilterChip(
+                                            selected = uiState.selectedCategoryFilter == null,
+                                            onClick = { onCategoryFilterSelected(null) },
+                                            label = { Text("Toutes", fontSize = 11.sp) },
+                                            shape = LuminaTokens.ShapePill
+                                        )
+                                        uiState.categories.forEach { category ->
+                                            FilterChip(
+                                                selected = uiState.selectedCategoryFilter == category.name,
+                                                onClick = { onCategoryFilterSelected(category.name) },
+                                                label = { Text(category.name, fontSize = 11.sp) },
+                                                shape = LuminaTokens.ShapePill
+                                            )
+                                        }
+                                    }
+
+                                    Text("Montant (FCFA)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedTextField(
+                                            value = minAmountInput,
+                                            onValueChange = { value ->
+                                                minAmountInput = value.filter { it.isDigit() }
+                                                onAmountRangeChange(
+                                                    minAmountInput.toLongOrNull() ?: 0L,
+                                                    maxAmountInput.toLongOrNull() ?: 0L
+                                                )
+                                            },
+                                            label = { Text("Min") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        OutlinedTextField(
+                                            value = maxAmountInput,
+                                            onValueChange = { value ->
+                                                maxAmountInput = value.filter { it.isDigit() }
+                                                onAmountRangeChange(
+                                                    minAmountInput.toLongOrNull() ?: 0L,
+                                                    maxAmountInput.toLongOrNull() ?: 0L
+                                                )
+                                            },
+                                            label = { Text("Max") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                    }
+
+                                    if (uiState.activeFilterCount > 0) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                minAmountInput = ""
+                                                maxAmountInput = ""
+                                                onResetFilters()
+                                                openPanel = null
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("Réinitialiser les filtres")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-            )
-        }
 
-        // Recherche + filtres compacts
-        item(key = "filters") {
-            Column {
+                Spacer(modifier = Modifier.height(10.dp))
+
                 OutlinedTextField(
                     value = uiState.searchQuery,
                     onValueChange = onSearchQueryChange,
@@ -192,7 +363,11 @@ fun TimelineScreen(
                     trailingIcon = {
                         if (uiState.searchQuery.isNotBlank()) {
                             IconButton(onClick = { onSearchQueryChange("") }) {
-                                Icon(imageVector = Icons.Default.Clear, contentDescription = "Effacer", modifier = Modifier.size(18.dp))
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Effacer",
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                     },
@@ -200,150 +375,6 @@ fun TimelineScreen(
                     shape = LuminaTokens.ShapeSubCard,
                     modifier = Modifier.fillMaxWidth().testTag("timeline_search_input")
                 )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                CollapsibleFilters(
-                    activeCount = uiState.activeFilterCount,
-                    onReset = {
-                        minAmountInput = ""
-                        maxAmountInput = ""
-                        onResetFilters()
-                    },
-                    label = "Filtrer l'historique"
-                ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Période", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            PeriodFilter.values().forEach { period ->
-                                FilterChip(
-                                    selected = uiState.selectedPeriod == period,
-                                    onClick = { onPeriodSelected(period) },
-                                    label = { Text(period.label, fontSize = 11.sp) },
-                                    shape = LuminaTokens.ShapePill
-                                )
-                            }
-                        }
-
-                        Text("Nature", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(
-                                selected = uiState.selectedTypeFilter == null,
-                                onClick = { onTypeFilterSelected(null) },
-                                label = { Text("Tout", fontSize = 11.sp) },
-                                shape = LuminaTokens.ShapePill
-                            )
-                            FilterChip(
-                                selected = uiState.selectedTypeFilter == TransactionType.INCOME,
-                                onClick = { onTypeFilterSelected(TransactionType.INCOME) },
-                                label = { Text("Entrées", fontSize = 11.sp) },
-                                shape = LuminaTokens.ShapePill
-                            )
-                            FilterChip(
-                                selected = uiState.selectedTypeFilter == TransactionType.EXPENSE,
-                                onClick = { onTypeFilterSelected(TransactionType.EXPENSE) },
-                                label = { Text("Sorties", fontSize = 11.sp) },
-                                shape = LuminaTokens.ShapePill
-                            )
-                        }
-
-                        if (uiState.cashRegisters.isNotEmpty()) {
-                            Text("Caisse", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(caisseScrollState),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                FilterChip(
-                                    selected = uiState.selectedCashRegisterId == null,
-                                    onClick = { onSelectCaisseFilter(null) },
-                                    label = { Text("Toutes", fontSize = 11.sp) },
-                                    shape = LuminaTokens.ShapePill
-                                )
-                                uiState.cashRegisters.forEach { reg ->
-                                    FilterChip(
-                                        selected = uiState.selectedCashRegisterId == reg.id,
-                                        onClick = { onSelectCaisseFilter(reg.id) },
-                                        label = { Text(reg.name, fontSize = 11.sp) },
-                                        shape = LuminaTokens.ShapePill
-                                    )
-                                }
-                            }
-                        }
-
-                        Text("Catégorie", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            FilterChip(
-                                selected = uiState.selectedCategoryFilter == null,
-                                onClick = { onCategoryFilterSelected(null) },
-                                label = { Text("Toutes", fontSize = 11.sp) },
-                                shape = LuminaTokens.ShapePill
-                            )
-                            uiState.categories.forEach { category ->
-                                FilterChip(
-                                    selected = uiState.selectedCategoryFilter == category.name,
-                                    onClick = { onCategoryFilterSelected(category.name) },
-                                    label = { Text(category.name, fontSize = 11.sp) },
-                                    shape = LuminaTokens.ShapePill,
-                                    colors = FilterChipDefaults.filterChipColors(
-                                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                )
-                            }
-                        }
-
-                        Text("Montant (FCFA)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = minAmountInput,
-                                onValueChange = { value ->
-                                    minAmountInput = value.filter { it.isDigit() }
-                                    onAmountRangeChange(
-                                        (minAmountInput.toLongOrNull() ?: 0L) * 100L,
-                                        (maxAmountInput.toLongOrNull() ?: 0L) * 100L
-                                    )
-                                },
-                                label = { Text("Min") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                            OutlinedTextField(
-                                value = maxAmountInput,
-                                onValueChange = { value ->
-                                    maxAmountInput = value.filter { it.isDigit() }
-                                    onAmountRangeChange(
-                                        (minAmountInput.toLongOrNull() ?: 0L) * 100L,
-                                        (maxAmountInput.toLongOrNull() ?: 0L) * 100L
-                                    )
-                                },
-                                label = { Text("Max") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        Text("Tri", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            SortMode.values().forEach { mode ->
-                                FilterChip(
-                                    selected = uiState.sortMode == mode,
-                                    onClick = { onSortModeSelected(mode) },
-                                    label = { Text(mode.label, fontSize = 11.sp) },
-                                    shape = LuminaTokens.ShapePill
-                                )
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -396,6 +427,9 @@ fun TimelineScreen(
                                 transaction = tx,
                                 displayMode = uiState.amountDisplayMode,
                                 timeFormatted = timeFormat.format(Date(tx.timestamp)),
+                                onOpenClick = {
+                                    if (!tx.isTransfer) onEditTransaction(tx)
+                                },
                                 onDeleteClick = { transactionToDelete = tx },
                                 showDivider = index < list.size - 1
                             )
@@ -443,6 +477,7 @@ fun TimelineTransactionRow(
     transaction: TransactionEntity,
     displayMode: com.example.util.AmountDisplayMode,
     timeFormatted: String,
+    onOpenClick: () -> Unit = {},
     onDeleteClick: () -> Unit,
     showDivider: Boolean
 ) {
@@ -452,6 +487,7 @@ fun TimelineTransactionRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onOpenClick() }
             .testTag("timeline_item_${transaction.id}")
             .padding(vertical = 8.dp)
     ) {
@@ -570,6 +606,84 @@ fun TimelineTransactionRow(
                 color = MaterialTheme.colorScheme.outlineVariant,
                 modifier = Modifier.padding(start = 50.dp)
             )
+        }
+    }
+}
+
+/** Icône de filtre rattachée à l'en-tête de la page, avec le nombre de filtres actifs. */
+@Composable
+private fun FilterPageIcon(
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    testTag: String,
+    onClick: () -> Unit
+) {
+    Box(contentAlignment = Alignment.TopEnd) {
+        IconButton(onClick = onClick, modifier = Modifier.testTag(testTag)) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (count > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (count > 0) {
+            Surface(
+                shape = LuminaTokens.ShapePill,
+                color = MaterialTheme.colorScheme.primary
+            ) {
+                Text(
+                    text = count.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                )
+            }
+        }
+    }
+}
+
+/** Liste flottante ouverte depuis une icône de l'en-tête. */
+@Composable
+private fun FloatingFilterCard(
+    title: String,
+    onClose: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        shape = LuminaTokens.ShapeCard,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp),
+        modifier = Modifier
+            .width(300.dp)
+            .heightIn(max = 460.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .verticalScroll(rememberScrollState())
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Fermer",
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            content()
         }
     }
 }

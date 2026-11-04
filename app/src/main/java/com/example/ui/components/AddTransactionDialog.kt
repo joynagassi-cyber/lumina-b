@@ -58,6 +58,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.CashRegisterEntity
 import com.example.data.CategoryEntity
+import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
@@ -74,6 +75,8 @@ fun AddTransactionDialog(
     categories: List<CategoryEntity> = emptyList(),
     cashRegisters: List<CashRegisterEntity> = emptyList(),
     defaultCashRegisterId: Long? = null,
+    /** Opération existante : le formulaire s'ouvre pré-rempli pour modification. */
+    initial: TransactionEntity? = null,
     onDismissRequest: () -> Unit,
     onOpenCategoryManager: () -> Unit = {},
     onSaveTransaction: (
@@ -88,9 +91,9 @@ fun AddTransactionDialog(
         receiptPhotoUri: String
     ) -> Unit
 ) {
-    var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    var selectedType by remember { mutableStateOf(initial?.type ?: TransactionType.EXPENSE) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    var receiptPath by remember { mutableStateOf("") }
+    var receiptPath by remember { mutableStateOf(initial?.receiptPhotoUri ?: "") }
     val receiptPicker = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri ->
@@ -98,15 +101,19 @@ fun AddTransactionDialog(
             com.example.util.ImageStore.uriToReceiptFile(context, uri)?.let { receiptPath = it }
         }
     }
-    var amountText by remember { mutableStateOf("") }
-    var title by remember { mutableStateOf("") }
+    var amountText by remember { mutableStateOf(initial?.amountCents?.toString() ?: "") }
+    var title by remember { mutableStateOf(initial?.title ?: "") }
 
     val filteredCategories = remember(categories, selectedType) {
         categories.filter { it.type == selectedType }
     }
 
     var selectedCategory by remember {
-        mutableStateOf(filteredCategories.firstOrNull()?.name ?: if (selectedType == TransactionType.INCOME) "Salaire" else "Alimentation")
+        mutableStateOf(
+            initial?.category
+                ?: filteredCategories.firstOrNull()?.name
+                ?: if (selectedType == TransactionType.INCOME) "Dîmes" else "Aides & secours"
+        )
     }
 
     LaunchedEffect(selectedType, filteredCategories) {
@@ -117,14 +124,19 @@ fun AddTransactionDialog(
 
     // Sélection de la caisse
     var selectedRegisterId by remember {
-        val initialId = defaultCashRegisterId ?: cashRegisters.firstOrNull()?.id ?: 1L
+        val initialId = initial?.cashRegisterId
+            ?: defaultCashRegisterId
+            ?: cashRegisters.firstOrNull()?.id
+            ?: 1L
         mutableLongStateOf(initialId)
     }
 
     var customCategory by remember { mutableStateOf("") }
     var isCustomCategorySelected by remember { mutableStateOf(false) }
-    var note by remember { mutableStateOf("") }
-    var selectedTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var note by remember { mutableStateOf(initial?.note ?: "") }
+    var selectedTimestamp by remember {
+        mutableLongStateOf(initial?.timestamp ?: System.currentTimeMillis())
+    }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
@@ -154,7 +166,7 @@ fun AddTransactionDialog(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Nouvelle Opération",
+                        text = if (initial == null) "Nouvelle Opération" else "Modifier l'opération",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
