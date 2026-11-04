@@ -51,7 +51,9 @@ data class TransactionEntity(
      */
     val reversalOfUid: String = "",
     /** L'écriture a été annulée par une contre-écriture : elle reste au journal. */
-    val isCancelled: Boolean = false
+    val isCancelled: Boolean = false,
+    /** Projet auquel l'écriture est affectée (0 = non affectée). */
+    val projectId: Long = 0L
 ) {
     val amountFormatted: String
         get() = CurrencyFormatter.format(amountCents)

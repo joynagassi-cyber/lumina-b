@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
         CashRegisterEntity::class,
         ChurchProfileEntity::class,
         MemberEntity::class,
-        UserEntity::class
+        UserEntity::class,
+        ProjectEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -33,6 +34,7 @@ abstract class LuminaDatabase : RoomDatabase() {
     abstract fun churchProfileDao(): ChurchProfileDao
     abstract fun memberDao(): MemberDao
     abstract fun userDao(): UserDao
+    abstract fun projectDao(): ProjectDao
 
     companion object {
         @Volatile
@@ -46,9 +48,10 @@ abstract class LuminaDatabase : RoomDatabase() {
                     "lumina_financial.db"
                 )
                 .addCallback(LuminaDatabaseCallback(scope))
-                .addMigrations(MIGRATION_5_6, MIGRATION_6_7)
-                // Filet de sécurité pour les installations très anciennes (v4 et avant)
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                // Filet de sécurité limité aux installations très anciennes (v4 et avant) :
+                // à partir de la v5, toutes les évolutions ont une migration explicite.
+                .fallbackToDestructiveMigrationFrom(1, 2, 3, 4)
                 .build()
                 INSTANCE = instance
                 instance
@@ -117,6 +120,26 @@ abstract class LuminaDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `reversalOfUid` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE `transactions` ADD COLUMN `isCancelled` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `church_profile` ADD COLUMN `booksClosedUntilMillis` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Version 8 : projets / fonds affectés. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `transactions` ADD COLUMN `projectId` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `projects` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`uid` TEXT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`description` TEXT NOT NULL, " +
+                        "`targetCents` INTEGER NOT NULL, " +
+                        "`isClosed` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, " +
+                        "`isDeleted` INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_projects_uid` ON `projects` (`uid`)")
             }
         }
 

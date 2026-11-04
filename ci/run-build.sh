@@ -189,6 +189,16 @@ phase_build() {
   find app/build/outputs -maxdepth 3 2>/dev/null | sed -n '1,40p' || true
 }
 
+# --- 4b. Tests unitaires ------------------------------------------------------
+# Non-régression des calculs et de la sauvegarde : un test rouge arrête la
+# publication, l'utilisateur ne reçoit donc jamais un APK cassé.
+phase_tests() {
+  chmod +x gradlew
+  ./gradlew testDebugUnitTest --no-configuration-cache --stacktrace
+  echo "--- rapports de tests ---"
+  find app/build/test-results -name '*.xml' 2>/dev/null | head -20 || true
+}
+
 # --- 5. Vérification de signature -------------------------------------------
 phase_verify() {
   local apk
@@ -255,6 +265,7 @@ main() {
   run_step "2. SDK Android"         phase_sdk
   run_step "3. Keystores"           phase_keystore
   run_step "4. Compilation Gradle"  phase_build
+  run_step "4b. Tests unitaires"    phase_tests
   run_step "5. Vérification APK"    phase_verify
 
   if [ "${SKIP_RELEASE:-0}" = "1" ]; then

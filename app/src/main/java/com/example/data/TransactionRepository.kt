@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.example.export.BackupSnapshot
 import kotlinx.coroutines.flow.Flow
 
 class TransactionRepository(
@@ -9,7 +10,8 @@ class TransactionRepository(
     private val cashRegisterDao: CashRegisterDao,
     private val churchProfileDao: ChurchProfileDao,
     private val memberDao: MemberDao,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val projectDao: ProjectDao
 ) {
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
@@ -250,6 +252,25 @@ class TransactionRepository(
     }
 
     // ==========================================
+    // Projets / fonds affectés
+    // ==========================================
+    val allProjects: Flow<List<ProjectEntity>> = projectDao.observeProjects()
+
+    suspend fun getProjectsOnce(): List<ProjectEntity> = projectDao.getAllOnce()
+
+    suspend fun getProjectById(id: Long): ProjectEntity? = projectDao.getById(id)
+
+    suspend fun saveProject(project: ProjectEntity): Long = projectDao.upsert(project)
+
+    suspend fun updateProject(project: ProjectEntity) = projectDao.update(project)
+
+    suspend fun deleteProject(id: Long) = projectDao.softDelete(id, System.currentTimeMillis())
+
+    suspend fun deleteAllProjects() = projectDao.getAllOnce().forEach {
+        projectDao.softDelete(it.id, System.currentTimeMillis())
+    }
+
+    // ==========================================
     // Remise à zéro des données d'essai
     // ==========================================
 
@@ -358,5 +379,62 @@ class TransactionRepository(
 
     suspend fun insertCategoriesRaw(items: List<CategoryEntity>) {
         items.forEach { categoryDao.insertCategory(it) }
+    }
+
+    // ==========================================
+    // Sauvegarde et restauration du dossier
+    // ==========================================
+
+    /** Rassemble tout le dossier dans une sauvegarde unique. */
+    suspend fun snapshotAll(): BackupSnapshot = BackupSnapshot(
+        createdAt = System.currentTimeMillis(),
+        churchName = churchProfileDao.getProfile()?.churchName ?: "",
+        users = userDao.getUsers(),
+        profile = churchProfileDao.getProfile(),
+        members = memberDao.getAllForSync(),
+        categories = categoryDao.getAllForSync(),
+        budgets = budgetDao.getAllOnce(),
+        registers = cashRegisterDao.getAllForSync(),
+        projects = projectDao.getAllOnce(),
+        transactions = transactionDao.getAllForSync()
+    )
+
+    /**
+     * Remet le dossier dans l'état de la sauvegarde : les données actuelles
+     * sont d'abord effacées, puis les écritures sont réinsérées telles quelles
+     * (identifiants conservés pour que les rattachements restent valables).
+     */
+    suspend fun restoreAll(snapshot: BackupSnapshot) {
+        transactionDao.deleteAllTransactions()
+        memberDao.deleteAllMembers()
+        budgetDao.deleteAllBudgets()
+        cashRegisterDao.deleteAllCashRegisters()
+        categoryDao.deleteAllCategories()
+        projectDao.deleteAllProjects()
+
+        snapshot.categories.forEach { categoryDao.insertCategory(it) }
+        snapshot.budgets.forEach { budgetDao.insertOrUpdateBudget(it) }
+        snapshot.projects.forEach { projectDao.upsert(it) }
+        snapshot.members.forEach { memberDao.insert(it) }
+        snapshot.registers.forEach { cashRegisterDao.insertCashRegister(it) }
+        snapshot.transactions.forEach { transactionDao.insertTransaction(it) }
+
+        if (snapshot.users.isNotEmpty()) {
+            userDao.deleteAllUsers()
+            snapshot.users.forEach { userDao.upsert(it) }
+        }
+        snapshot.profile?.let { churchProfileDao.upsert(it) }
+        ensureDefaultCategories()
+        if (cashRegisterDao.getCount() == 0) {
+            cashRegisterDao.insertCashRegister(
+                CashRegisterEntity(
+                    name = "Caisse principale",
+                    description = "Caisse physique de l'église",
+                    initialBalanceCents = 0L,
+                    iconType = "cash",
+                    isDefault = true
+                )
+            )
+        }
     }
 }

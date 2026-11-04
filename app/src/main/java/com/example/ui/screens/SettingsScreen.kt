@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
@@ -49,6 +50,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -84,11 +86,18 @@ fun SettingsScreen(
     onWipeData: (Boolean) -> Unit = {},
     onClosePreviousMonth: () -> Unit = {},
     onReopenBooks: () -> Unit = {},
+    onCreateBackup: (String) -> Unit = {},
+    onRequestRestore: (String) -> Unit = {},
+    onRestoreAuto: () -> Unit = {},
+    lastAutoBackupLabel: String = "",
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
     // null = pas de confirmation en cours ; false = vider le dossier ; true = tout effacer
     var confirmWipe: Boolean? by remember { mutableStateOf(null) }
+    var showBackupDialog: Boolean by remember { mutableStateOf(false) }
+    var showRestoreDialog: Boolean by remember { mutableStateOf(false) }
+    var password: String by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier
@@ -486,7 +495,163 @@ fun SettingsScreen(
             }
         }
 
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
+
+        // SECTION 8 : SAUVEGARDE & RESTAURATION
+        GroupedCard(title = "Sauvegarde & restauration") {
+            ListRow(
+                title = "Copie automatique",
+                subtitle = if (lastAutoBackupLabel.isBlank()) {
+                    "Une copie de secours est conservée chaque jour dans l'application."
+                } else {
+                    "Dernière copie : $lastAutoBackupLabel"
+                },
+                icon = Icons.Default.Security,
+                iconTileColor = MaterialTheme.colorScheme.secondaryContainer,
+                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                showDivider = true
+            )
+            ListRow(
+                title = "Emporter une sauvegarde",
+                subtitle = "Enregistrez le dossier complet sur une clé, un compte de messagerie " +
+                    "ou le stockage du téléphone. Vous pourrez le réinstaller même après un changement d'appareil.",
+                icon = Icons.Default.Description,
+                iconTileColor = MaterialTheme.colorScheme.primaryContainer,
+                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                onClick = {
+                    password = ""
+                    showBackupDialog = true
+                },
+                showDivider = true,
+                modifier = Modifier.testTag("backup_export_row")
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        password = ""
+                        showBackupDialog = true
+                    },
+                    shape = LuminaTokens.ShapePill,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("backup_create_button")
+                ) {
+                    Text("Créer une sauvegarde", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = {
+                        password = ""
+                        showRestoreDialog = true
+                    },
+                    shape = LuminaTokens.ShapePill,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("backup_restore_button")
+                ) {
+                    Text("Restaurer", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(80.dp))
+    }
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("Créer une sauvegarde") },
+            text = {
+                Column {
+                    Text(
+                        "Une protection par mot de passe est recommandée si la sauvegarde " +
+                            "circule par messagerie. Sans mot de passe, le fichier reste lisible " +
+                            "par quiconque le détient.",
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Mot de passe (facultatif)") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("backup_password_field")
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onCreateBackup(password)
+                        showBackupDialog = false
+                    },
+                    modifier = Modifier.testTag("backup_confirm_button")
+                ) {
+                    Text("Créer")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDialog = false }) { Text("Annuler") }
+            }
+        )
+    }
+
+    if (showRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = { showRestoreDialog = false },
+            title = { Text("Restaurer un dossier") },
+            text = {
+                Column {
+                    Text(
+                        "La restauration remplace le dossier actuel par celui de la sauvegarde. " +
+                            "Une copie de sécurité est conservée par l'application.",
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Mot de passe de la sauvegarde") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("restore_password_field")
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TextButton(
+                        onClick = {
+                            onRestoreAuto()
+                            showRestoreDialog = false
+                        },
+                        modifier = Modifier.testTag("restore_auto_button")
+                    ) {
+                        Text("Rétablir la copie automatique du jour", fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onRequestRestore(password)
+                        showRestoreDialog = false
+                    },
+                    modifier = Modifier.testTag("restore_confirm_button")
+                ) {
+                    Text("Choisir un fichier")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRestoreDialog = false }) { Text("Annuler") }
+            }
+        )
     }
 
     confirmWipe?.let { full ->

@@ -13,6 +13,9 @@ interface BudgetDao {
     @Query("SELECT * FROM budgets ORDER BY id DESC")
     fun getAllBudgets(): Flow<List<BudgetEntity>>
 
+    @Query("SELECT * FROM budgets ORDER BY id ASC")
+    suspend fun getAllOnce(): List<BudgetEntity>
+
     @Query("SELECT * FROM budgets WHERE monthYearKey = :monthYearKey ORDER BY categoryName ASC")
     fun getBudgetsForPeriod(monthYearKey: String): Flow<List<BudgetEntity>>
 
