@@ -34,6 +34,17 @@ mask() { # masque une valeur sensible dans les annotations
   return 0
 }
 
+escape_ann() { # échappe une sortie multi-lignes pour une annotation GitHub
+  local msg="$1" v
+  for v in "${MASK_VALUES[@]:-}"; do [ -n "$v" ] && msg=${msg//"$v"/***}; done
+  printf '%s' "$msg" | sed -e 's/%/%25/g' -e 's/\r//g' -e 's/\x1e//g' \
+    | tr '\n' '\036' | sed 's/\x1e/ %0A /g' | cut -c1-3000
+}
+
+note() { # $1 = titre, $2 = contenu -> annotation "notice" lisible par l'agent
+  echo "::notice title=${1}::$(escape_ann "${2:-}")"
+}
+
 run_step() { # $1 = nom affiché, $2... = fonction de phase
   local name="$1"; shift
   local out rc=0
@@ -42,17 +53,13 @@ run_step() { # $1 = nom affiché, $2... = fonction de phase
   "$@" >"$out" 2>&1 || rc=$?
   if [ "$rc" -ne 0 ]; then
     local msg
-    msg=$(tail -n 30 "$out" 2>/dev/null || true)
-    for v in "${MASK_VALUES[@]:-}"; do
-      [ -n "$v" ] && msg=${msg//"$v"/***}
-    done
-    msg=$(printf '%s' "$msg" | sed -e 's/%/%25/g' -e 's/\r//g' -e 's/\x1e//g' \
-          | tr '\n' '\036' | sed 's/\x1e/ %0A /g' | cut -c1-3500)
+    msg=$(escape_ann "$(tail -n 30 "$out" 2>/dev/null || true)")
     echo "::endgroup::"
     echo "::error title=${name}::code ${rc} — ${msg:-(aucune sortie)}"
     return "$rc"
   fi
-  tail -n 20 "$out" || true
+  tail -n 25 "$out" || true
+  note "${name} — OK" "$(tail -n 8 "$out")"
   echo "::endgroup::"
   rm -f "$out"
   return 0
@@ -155,8 +162,10 @@ phase_build() {
   fi
   echo "Tâches Gradle : $tasks"
   ./gradlew $tasks --no-configuration-cache --stacktrace
-  ls -lh app/build/outputs/apk/debug/ 2>/dev/null || true
-  ls -lh app/build/outputs/apk/release/ 2>/dev/null || true
+  echo "--- binaires produits ---"
+  find app/build -type f \( -name '*.apk' -o -name '*.aab' \) 2>/dev/null || true
+  echo "--- arborescence app/build/outputs ---"
+  find app/build/outputs -maxdepth 3 2>/dev/null | sed -n '1,40p' || true
 }
 
 # --- 5. Vérification de signature -------------------------------------------
