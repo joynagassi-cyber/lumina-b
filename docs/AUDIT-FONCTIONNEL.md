@@ -192,6 +192,12 @@ remplacer par de vraies `Migration` avant une version grand public.
    durci, documentation `docs/SIGNING-ET-RELEASE.md`.
 5. `versionCode` / `versionName` surchargeables par `VERSION_CODE` / `VERSION_NAME`
    (défauts `1` / `"1.0"` inchangés : AI Studio n'est pas impacté).
+6. **Signature opérationnelle** : keystore de release généré et vérifié
+   (`my-upload-key.jks`, PKCS12, alias `upload`, RSA 4096, SHA-256
+   `D0:27:13:1B:71:B1:ED:54:08:CC:3B:C0:2A:D9:53:95:4D:65:51:70:E1:3B:6B:86:4D:C5:F1:37:4D:09:D0:E6`),
+   `keystore.properties` lu par le build, scripts `build-release.sh` et `set-github-secrets.sh`.
+7. **Android 12** : écran de démarrage natif (`values-v31/themes.xml`), compatibilité vérifiée
+   sur la plage Android 7 → 16, `minSdk` paramétrable (`MIN_SDK=31`) sans toucher au code.
 
 ## 5. Ordre de traitement conseillé
 

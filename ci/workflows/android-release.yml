@@ -112,7 +112,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          ./gradlew clean assembleRelease bundleRelease --stacktrace
+          ./gradlew clean assembleRelease bundleRelease --no-configuration-cache --stacktrace
 
       - name: Vérification de la signature
         env:

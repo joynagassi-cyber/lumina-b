@@ -15,7 +15,10 @@ avec GitHub Actions.
 | `ci/workflows/android-ci.yml` | Compile + tests + APK debug à chaque push/PR |
 | `ci/workflows/android-release.yml` | APK **signé** + AAB signé sur tag `v*`, publiés en GitHub Release |
 | `ci/workflows/bootstrap-keystore.yml` | Génère le keystore **dans GitHub** (si vous n'avez pas de JDK local) |
-| `.gitignore` | Bloque `*.jks`, `*.keystore`, `*.p12`, `*.jks.base64` |
+| `scripts/build-release.sh` | APK + AAB signés en local (lit `keystore.properties`) |
+| `scripts/set-github-secrets.sh` | Pousse le keystore et les mots de passe dans les secrets GitHub |
+| `keystore.properties` | Identifiants locaux de signature — **ignoré par Git**, lu par le build |
+| `.gitignore` | Bloque `*.jks`, `*.keystore`, `*.p12`, `*.jks.base64`, `keystore.properties` |
 
 > ⚠️ **Activer les workflows d'abord** : ils sont livrés dans `ci/workflows/` (contrainte de
 > permission du dépôt). Lancez `bash scripts/install-ci.sh` puis poussez, ou déposez les 3
@@ -70,6 +73,31 @@ Le script :
 
 ---
 
+## 2 bis. Keystore déjà généré pour ce dépôt
+
+Un keystore de release **a déjà été créé et vérifié** (généré avec `keytool`, JDK 25) :
+
+| Élément | Valeur |
+|---|---|
+| Fichier | `my-upload-key.jks` (PKCS12, 4 392 octets) |
+| Fichier base64 | `my-upload-key.jks.base64` (pour le secret `KEYSTORE_BASE64`) |
+| Alias | `upload` |
+| Clé | RSA 4096, SHA384withRSA, validité 30 ans (2026-11-04 → 2056-10-27) |
+| Empreinte SHA-256 | `D0:27:13:1B:71:B1:ED:54:08:CC:3B:C0:2A:D9:53:95:4D:65:51:70:E1:3B:6B:86:4D:C5:F1:37:4D:09:D0:E6` |
+| Mots de passe | dans `keystore-credentials.txt` et `keystore.properties` (les deux ignorés par Git) |
+
+Vérifications effectuées : `keytool -list -v` (entrée `PrivateKeyEntry` valide) et
+`keytool -certreq` (accès effectif à la clé privée, prérequis de la signature).
+
+> ⚠️ Ces 3 fichiers ne sont **pas** dans Git (volontairement). Ils existent uniquement dans
+> l'espace de travail : téléchargez-les / copiez-les dans votre gestionnaire de mots de passe
+> **avant** de nettoyer l'espace de travail. Sans eux, plus aucune mise à jour possible.
+
+Les mots de passe sont aussi présents dans `keystore.properties`, ce qui permet de builder
+et de créer les secrets sans les saisir à la main.
+
+---
+
 ## 3. Enregistrer les secrets GitHub
 
 Dépôt → **Settings → Secrets and variables → Actions → New repository secret** :
@@ -106,6 +134,18 @@ bash scripts/generate-debug-keystore.sh   # une seule fois
 ```
 
 ### APK de release signé
+
+Le build lit les identifiants dans cet ordre : **variables d'environnement** > `keystore.properties`
+> `./my-upload-key.jks`. En local, le plus simple est donc de laisser `keystore.properties` faire
+le travail :
+
+```bash
+bash scripts/build-release.sh                       # APK + AAB + vérification apksigner
+VERSION_NAME=1.0.1 VERSION_CODE=2 bash scripts/build-release.sh
+MIN_SDK=31 bash scripts/build-release.sh            # plancher Android 12 (voir §6 bis)
+```
+
+Équivalent manuel :
 
 ```bash
 export KEYSTORE_PATH="$PWD/my-upload-key.jks"
@@ -172,6 +212,37 @@ obtenir un APK signé téléchargeable dans les artifacts (30 jours), sans crée
 
 `adb install -r Lumina-1.0.1-42.apk` fonctionne aussi, et
 `adb shell dumpsys package <applicationId> | grep signatures` permet de comparer.
+
+---
+
+## 6 bis. Compatibilité Android 12 (API 31)
+
+L'APK **fonctionne sur Android 12** : `minSdk = 24` (Android 7.0) et `targetSdk = 36`, la plage
+couverte va donc d'Android 7.0 à Android 16, Android 12 inclus.
+
+Ce qui a été configuré explicitement pour Android 12 :
+
+- `android:exported="true"` sur l'activité de lancement (obligatoire depuis Android 12) : déjà présent.
+- **Écran de démarrage natif** : `res/values-v31/themes.xml` définit `windowSplashScreenBackground`
+  et `windowSplashScreenIconBackgroundColor` (fonction SplashScreen API introduite par Android 12),
+  avec un fond `#0D1B2A` cohérent avec l'icône. Les appareils < 31 gardent le thème d'origine.
+- Aucun `PendingIntent`, aucune alarme exacte, aucun service de premier plan : les restrictions
+  Android 12 (`FLAG_IMMUTABLE`, `SCHEDULE_EXACT_ALARM`, démarrage de FGS) ne s'appliquent pas.
+- Partage des exports PDF/CSV via `FileProvider` + `FLAG_GRANT_READ_URI_PERMISSION` : conforme
+  aux règles de visibilité des fichiers d'Android 12.
+
+### Vouloir un plancher Android 12 (`minSdk = 31`)
+
+Si l'objectif est au contraire de **n'installer que sur Android 12 et plus récent** (APK plus
+petit, moins de code legacy), c'est un réglage, pas une modification de code :
+
+```bash
+MIN_SDK=31 bash scripts/build-release.sh
+# ou de façon permanente : remplacer dans app/build.gradle.kts la valeur par défaut 24 par 31
+```
+
+⚠️ Conséquence : les appareils Android 7 à 11 ne pourront plus installer l'application.
+Le comportement par défaut (24) couvre Android 12 **et** les versions antérieures.
 
 ---
 

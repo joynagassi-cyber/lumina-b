@@ -6,7 +6,8 @@ PDF / CSV. Montants en **FCFA (XOF)**, calculs en arithmétique entière (`Long`
 Room/SQLite, aucune permission réseau.
 
 - Kotlin 2.2 · Jetpack Compose (Material 3) · Room 2.7 · AGP 9.1 · Gradle 9.3.1
-- `minSdk 24` · `targetSdk 36` · `applicationId` actuel : `com.aistudio.applet.hfkylu`
+- `minSdk 24` (Android 7.0) · `targetSdk 36` · **compatible Android 7 → 16, Android 12 inclus**
+- `applicationId` actuel : `com.aistudio.applet.hfkylu` (à figer avant publication)
 
 ## Écrans
 
@@ -39,15 +40,22 @@ Le wrapper Gradle est fourni : inutile d'installer Gradle.
 ## Signer et publier
 
 ```bash
-# Keystore de release + secrets GitHub
+# Un keystore de release existe déjà dans l'espace de travail (voir keystore-credentials.txt).
+# Sur une nouvelle machine / un nouveau dépôt :
 STORE_PASSWORD='mot-de-passe-solide' bash scripts/generate-keystore.sh
-gh secret set KEYSTORE_BASE64 < my-upload-key.jks.base64
-gh secret set STORE_PASSWORD --body 'mot-de-passe-solide'
-gh secret set KEY_PASSWORD   --body 'mot-de-passe-solide'
 
-# Release signée (APK + AAB) via GitHub Actions
+# Secrets GitHub (nécessite un jeton avec le droit d'administration du dépôt)
+bash scripts/set-github-secrets.sh
+
+# Build local signé (APK + AAB + vérification apksigner)
+bash scripts/build-release.sh
+
+# Ou release automatisée via GitHub Actions
 git tag v1.0.1 && git push origin v1.0.1
 ```
+
+Compatibilité : l'APK s'installe d'Android 7.0 à Android 16 (Android 12 inclus). Pour imposer
+Android 12 comme minimum : `MIN_SDK=31 bash scripts/build-release.sh`.
 
 Guide détaillé (keystore, secrets, Play Store, dépannage) :
 **[docs/SIGNING-ET-RELEASE.md](docs/SIGNING-ET-RELEASE.md)**

@@ -26,3 +26,4 @@ my-upload-key.jks
 keystore.properties
 release-notes.md
 dist/
+keystore-credentials.txt
