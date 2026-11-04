@@ -1,5 +1,4 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -8,16 +7,36 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// --- Configuration de signature ---------------------------------------------
+// Priorité : variables d'environnement (CI / shell) > keystore.properties (local, ignoré
+// par Git) > valeur par défaut. Compatible avec l'injection AI Studio (mêmes noms de
+// signingConfigs : "release" et "debugConfig").
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = java.util.Properties().apply {
+  if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { load(it) }
+  }
+}
+
+fun signingValue(envKey: String, propertyKey: String): String? =
+  System.getenv(envKey)?.takeIf { it.isNotBlank() }
+    ?: keystoreProperties.getProperty(propertyKey)?.takeIf { it.isNotBlank() }
+
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
   defaultConfig {
     applicationId = "com.aistudio.applet.hfkylu"
-    minSdk = 24
+    // Android 7.0 (24) par défaut : l'APK couvre Android 7 -> 16, donc Android 12 (31).
+    // Plancher plus élevé possible sans toucher au code : MIN_SDK=31 ./gradlew assembleRelease
+    minSdk = System.getenv("MIN_SDK")?.toIntOrNull() ?: 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    // Surchargeables par l'environnement (utile en CI) :
+    //   VERSION_CODE=42 VERSION_NAME=1.2.3 ./gradlew assembleRelease
+    versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
+    versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -26,11 +45,13 @@ android {
   // and updating Android apps in AI Studio.
   signingConfigs {
     create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      val keystorePath = signingValue("KEYSTORE_PATH", "storeFile") ?: "${rootDir}/my-upload-key.jks"
       storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+      storePassword = signingValue("STORE_PASSWORD", "storePassword")
+      keyAlias = signingValue("KEY_ALIAS", "keyAlias") ?: "upload"
+      keyPassword = signingValue("KEY_PASSWORD", "keyPassword")
+      // PKCS12 (Android Studio moderne) ou JKS : laisser vide pour détection automatique.
+      signingValue("KEY_STORE_TYPE", "storeType")?.let { type -> storeType = type }
     }
     create("debugConfig") {
       storeFile = file("${rootDir}/debug.keystore")

@@ -158,7 +158,7 @@ fun DashboardScreen(
 
         // Visualisation interactive de la timeline financière dans la section principale
         FinancialTimelineChart(
-            transactions = uiState.transactions,
+            transactions = uiState.periodTransactions,
             title = "Dynamique des Flux • ${uiState.selectedPeriod.label}",
             subtitle = "Inspection tactile de l'évolution financière",
             displayMode = uiState.amountDisplayMode,
@@ -522,7 +522,7 @@ fun DashboardScreen(
             onActionClick = onNavigateToTimeline
         )
 
-        if (uiState.transactions.isEmpty()) {
+        if (uiState.periodTransactions.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = LuminaTokens.ShapeCard,
@@ -554,7 +554,7 @@ fun DashboardScreen(
         } else {
             // GroupedCard avec séparateurs fins insets
             GroupedCard {
-                uiState.transactions.take(4).forEachIndexed { index, tx ->
+                uiState.periodTransactions.take(4).forEachIndexed { index, tx ->
                     val isIncome = tx.type == TransactionType.INCOME
                     Row(
                         modifier = Modifier
@@ -615,7 +615,7 @@ fun DashboardScreen(
                         )
                     }
 
-                    if (index < 3 && index < uiState.transactions.size - 1) {
+                    if (index < 3 && index < uiState.periodTransactions.size - 1) {
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outlineVariant,
                             modifier = Modifier.padding(start = 50.dp)

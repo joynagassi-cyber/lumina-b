@@ -1,0 +1,122 @@
+name: Android CI
+
+# Vérification à chaque push/PR : compilation, tests unitaires et APK debug.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GRADLE_OPTS: >-
+    -Dorg.gradle.jvmargs=-Xmx4g
+    -Dorg.gradle.daemon=false
+  JAVA_VERSION: '21'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Job principal : l'APK est produit même si les tests échouent (jobs séparés).
+  # ---------------------------------------------------------------------------
+  build-debug:
+    name: APK debug
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Licences + plateformes
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platform-tools" "build-tools;36.0.0" > /dev/null || true
+          sdkmanager "platforms;android-36.1" > /dev/null 2>&1 \
+            || sdkmanager "platforms;android-36" > /dev/null 2>&1 \
+            || echo "::warning::Plateforme 36 non préinstallée — AGP tentera le téléchargement automatique."
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Keystore de debug (convention AI Studio)
+        run: bash scripts/generate-debug-keystore.sh
+
+      - name: Environnement
+        run: |
+          ./gradlew --version
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+          ls "$ANDROID_HOME/platforms" 2>/dev/null || true
+
+      - name: Assemblage APK debug
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Informations de l'APK
+        run: |
+          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          echo "APK : $APK"
+          du -h "$APK"
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$BUILD_TOOLS/aapt2" dump badging "$APK" 2>/dev/null | head -5 || true
+
+      - name: Publier l'APK debug
+        uses: actions/upload-artifact@v7
+        with:
+          name: lumina-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Tests unitaires (JVM + Room/Robolectric) : job indépendant.
+  # ---------------------------------------------------------------------------
+  tests:
+    name: Tests unitaires
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Licences
+        run: yes | sdkmanager --licenses > /dev/null 2>&1 || true
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Tests unitaires (Room + formateur monétaire)
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Publier les rapports de tests
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rapports-tests
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+          retention-days: 7
