@@ -253,8 +253,9 @@ fun CaissesScreen(
         )
 
         LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 96.dp)
         ) {
             items(uiState.cashRegisterSummaries, key = { it.id }) { caisse ->
                 val isSelected = uiState.selectedCashRegisterId == caisse.id
@@ -623,7 +624,7 @@ fun TransferCaisseDialog(
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Transfert transparent et déterministe entre deux caisses",
+                    text = "Déplacez un montant d'une caisse à une autre, en toute traçabilité",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

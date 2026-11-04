@@ -106,7 +106,7 @@ fun DashboardScreen(
                     color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
-                    text = "Gestion déterministe & traçabilité des flux",
+                    text = "Suivi clair et traçable de vos finances",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -6,8 +6,33 @@ class TransactionRepository(
     private val transactionDao: TransactionDao,
     private val categoryDao: CategoryDao,
     private val budgetDao: BudgetDao,
-    private val cashRegisterDao: CashRegisterDao
+    private val cashRegisterDao: CashRegisterDao,
+    private val churchProfileDao: ChurchProfileDao,
+    private val memberDao: MemberDao
 ) {
+    // ==========================================
+    // Identité de l'église (profil local)
+    // ==========================================
+    val profile: Flow<ChurchProfileEntity?> = churchProfileDao.observeProfile()
+
+    suspend fun getProfile(): ChurchProfileEntity? = churchProfileDao.getProfile()
+
+    suspend fun saveProfile(profile: ChurchProfileEntity) = churchProfileDao.upsert(profile)
+
+    // ==========================================
+    // Membres de l'assemblée
+    // ==========================================
+    val allMembers: Flow<List<MemberEntity>> = memberDao.observeMembers()
+
+    suspend fun insertMember(member: MemberEntity): Long = memberDao.insert(member)
+
+    suspend fun updateMember(member: MemberEntity) = memberDao.update(member)
+
+    suspend fun deleteMember(member: MemberEntity) = memberDao.delete(member)
+
+    suspend fun deleteMemberById(id: Long) = memberDao.deleteById(id)
+
+    suspend fun getMember(id: Long): MemberEntity? = memberDao.getById(id)
     // ==========================================
     // Transactions
     // ==========================================
@@ -55,6 +80,15 @@ class TransactionRepository(
 
     suspend fun deleteById(id: Long) {
         transactionDao.deleteById(id)
+    }
+
+    suspend fun deleteByTransferGroup(groupId: String) {
+        transactionDao.deleteByTransferGroup(groupId)
+    }
+
+    suspend fun renameCategoryEverywhere(oldName: String, newName: String) {
+        transactionDao.renameCategory(oldName, newName)
+        budgetDao.renameCategory(oldName, newName)
     }
 
     // ==========================================
@@ -182,5 +216,13 @@ class TransactionRepository(
 
     suspend fun getCashRegisterById(id: Long): CashRegisterEntity? {
         return cashRegisterDao.getById(id)
+    }
+
+    suspend fun getCashRegisterCount(): Int = cashRegisterDao.getCount()
+
+    /** Supprime une caisse et ses écritures pour ne jamais laisser d'orphelines. */
+    suspend fun deleteCashRegisterAndTransactions(id: Long) {
+        transactionDao.deleteByCashRegister(id)
+        cashRegisterDao.deleteById(id)
     }
 }

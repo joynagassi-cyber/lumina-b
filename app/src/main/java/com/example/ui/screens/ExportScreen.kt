@@ -347,7 +347,7 @@ fun ExportScreen(
                 )
                 Spacer(modifier = Modifier.width(10.dp))
                 Text(
-                    text = "Stockage 100% hors-ligne Room SQLite. Vos chiffres ne quittent jamais votre téléphone.",
+                    text = "Vos chiffres restent sur votre téléphone, sans aucun serveur externe.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 16.sp

@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
@@ -83,10 +84,20 @@ fun AddTransactionDialog(
         timestamp: Long,
         note: String,
         cashRegisterId: Long,
-        cashRegisterName: String
+        cashRegisterName: String,
+        receiptPhotoUri: String
     ) -> Unit
 ) {
     var selectedType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var receiptPath by remember { mutableStateOf("") }
+    val receiptPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            com.example.util.ImageStore.uriToReceiptFile(context, uri)?.let { receiptPath = it }
+        }
+    }
     var amountText by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
 
@@ -480,6 +491,50 @@ fun AddTransactionDialog(
                     shape = RoundedCornerShape(12.dp)
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Justificatif : photo ou scan de la facture (facultatif)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Justificatif (facultatif)",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = if (receiptPath.isBlank()) {
+                                "Photo ou scan de la facture, du reçu ou du bordereau"
+                            } else {
+                                "Pièce jointe à l'opération"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (receiptPath.isBlank()) {
+                        androidx.compose.material3.TextButton(
+                            onClick = { receiptPicker.launch("image/*") },
+                            modifier = Modifier.testTag("attach_receipt_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.AddPhotoAlternate,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Joindre")
+                        }
+                    } else {
+                        androidx.compose.material3.TextButton(onClick = { receiptPath = "" }) {
+                            Text("Retirer", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+
                 // Message d'erreur
                 if (errorMessage != null) {
                     Spacer(modifier = Modifier.height(8.dp))
@@ -524,7 +579,8 @@ fun AddTransactionDialog(
                             selectedTimestamp,
                             note,
                             selectedRegisterId,
-                            regName
+                            regName,
+                            receiptPath
                         )
                         onDismissRequest()
                     },

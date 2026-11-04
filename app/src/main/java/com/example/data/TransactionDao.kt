@@ -52,6 +52,15 @@ interface TransactionDao {
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long)
 
+    @Query("DELETE FROM transactions WHERE transferGroupId = :groupId AND transferGroupId != ''")
+    suspend fun deleteByTransferGroup(groupId: String)
+
+    @Query("DELETE FROM transactions WHERE cashRegisterId = :cashRegisterId")
+    suspend fun deleteByCashRegister(cashRegisterId: Long)
+
+    @Query("UPDATE transactions SET category = :newName WHERE category = :oldName")
+    suspend fun renameCategory(oldName: String, newName: String)
+
     @Query("DELETE FROM transactions")
     suspend fun deleteAllTransactions()
 
