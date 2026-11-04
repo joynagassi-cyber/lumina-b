@@ -60,6 +60,19 @@ Android 12 comme minimum : `MIN_SDK=31 bash scripts/build-release.sh`.
 Guide détaillé (keystore, secrets, Play Store, dépannage) :
 **[docs/SIGNING-ET-RELEASE.md](docs/SIGNING-ET-RELEASE.md)**
 
+## Publier une release
+
+```bash
+# 1. Prérequis (une seule fois)
+bash scripts/install-ci.sh --push      # installe .github/workflows/
+bash scripts/set-github-secrets.sh     # KEYSTORE_BASE64, STORE_PASSWORD, KEY_PASSWORD
+
+# 2. Release complète : build signé + APK/AAB attachés + publication
+bash scripts/first-release.sh 1.0.0
+```
+
+Notes de version : [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Intégration continue
 
 > Les workflows sont fournis dans **`ci/workflows/`** (le jeton de l'agent n'a pas la permission
