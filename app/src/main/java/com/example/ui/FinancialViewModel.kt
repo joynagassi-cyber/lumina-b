@@ -1291,7 +1291,7 @@ class FinancialViewModel(
                     periodStartMillis = state.bilan.periodStartMillis,
                     periodEndMillis = state.bilan.periodEndMillis,
                     generatedBy = state.currentUser?.displayName ?: "",
-                    documentNumber = state.reportDocumentNumber
+                    documentNumber = reportDocumentNumber
                 )
                 ReportExporter.shareFile(
                     context = context,
