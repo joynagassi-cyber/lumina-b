@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -57,13 +58,45 @@ fun LuminaCard(
     ambientShadowColor: Color = Color.Black.copy(alpha = 0.25f),
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val isGlass = MaterialTheme.colorScheme.background.alpha == 0f
     val defaultContainerColor = containerColor ?: MaterialTheme.colorScheme.surface
-    val defaultBorder = border ?: if (backgroundBrush == null) {
-        BorderStroke(
+    val glassBorder = BorderStroke(
+        width = LuminaTokens.BorderWidthThin,
+        brush = Brush.linearGradient(
+            colors = listOf(
+                Color.White.copy(alpha = 0.72f),
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.30f),
+                Color.White.copy(alpha = 0.16f),
+                Color.White.copy(alpha = 0.48f)
+            )
+        )
+    )
+    val defaultBorder = border ?: when {
+        isGlass -> glassBorder
+        backgroundBrush == null -> BorderStroke(
             width = LuminaTokens.BorderWidthThin,
             color = MaterialTheme.colorScheme.outline
         )
-    } else null
+        else -> null
+    }
+    val resolvedSpotShadow = if (isGlass) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)
+    } else spotShadowColor
+    val resolvedAmbientShadow = if (isGlass) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    } else ambientShadowColor
+    val glassSheen = if (isGlass) {
+        Modifier.drawWithContent {
+            drawContent()
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.13f), Color.Transparent),
+                    startY = 0f,
+                    endY = 34.dp.toPx()
+                )
+            )
+        }
+    } else Modifier
 
     // Base surface avec ombrage de profondeur configurable
     Surface(
@@ -72,8 +105,8 @@ fun LuminaCard(
                 elevation = elevation.shadowElevation,
                 shape = shape,
                 clip = false,
-                ambientColor = ambientShadowColor,
-                spotColor = spotShadowColor
+                ambientColor = resolvedAmbientShadow,
+                spotColor = resolvedSpotShadow
             ),
         shape = shape,
         color = if (backgroundBrush != null) Color.Transparent else defaultContainerColor,
@@ -93,7 +126,8 @@ fun LuminaCard(
             modifier = Modifier
                 .clip(shape)
                 .then(backgroundModifier)
-                .then(clickModifier),
+                .then(clickModifier)
+                .then(glassSheen),
             content = content
         )
     }

@@ -29,8 +29,8 @@ object LuminaBranding {
 }
 
 /**
- * Icône de marque intégrée à l'application : son fond suit l'accent du profil,
- * tandis que la marque blanche et la sphère indigo restent cohérentes.
+ * Icône de marque intégrée à l'application : le symbole multicolore est centré
+ * dans une zone transparente avec une marge de sécurité intégrée au fichier.
  */
 @Composable
 fun LuminaBrandMark(
@@ -45,13 +45,23 @@ fun LuminaBrandMark(
             .background(
                 Brush.linearGradient(
                     colors = listOf(
-                        lerp(backgroundColor, Color.White, 0.16f),
-                        backgroundColor,
-                        lerp(backgroundColor, Color.Black, 0.28f)
+                        lerp(Color(0xFF26345D), backgroundColor, 0.32f),
+                        Color(0xFF11182D),
+                        lerp(Color(0xFF121B33), backgroundColor, 0.22f)
                     )
                 )
             )
-            .border(1.dp, Color.White.copy(alpha = 0.34f), shape)
+            .border(
+                1.dp,
+                Brush.linearGradient(
+                    colors = listOf(
+                        Color.White.copy(alpha = 0.70f),
+                        backgroundColor.copy(alpha = 0.48f),
+                        Color.White.copy(alpha = 0.16f)
+                    )
+                ),
+                shape
+            )
     ) {
         Box(
             modifier = Modifier
@@ -65,7 +75,7 @@ fun LuminaBrandMark(
                 )
         )
         Image(
-            painter = painterResource(id = R.drawable.ic_launcher_foreground_asset),
+            painter = painterResource(id = R.drawable.lumina_brand_mark_color),
             contentDescription = contentDescription,
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize()

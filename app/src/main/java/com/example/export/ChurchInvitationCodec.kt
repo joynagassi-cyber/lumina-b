@@ -75,7 +75,7 @@ object ChurchInvitationCodec {
                 .takeIf { it.matches(Regex("#[0-9A-Fa-f]{6}")) } ?: ChurchProfileEntity.DEFAULT_ACCENT,
             onboardingCompleted = true,
             themeMode = root.optString("themeMode", "SYSTEM")
-                .takeIf { it in setOf("SYSTEM", "LIGHT", "DARK") } ?: "SYSTEM",
+                .takeIf { it in setOf("SYSTEM", "LIGHT", "DARK", "GLASS_LIGHT", "GLASS_DARK") } ?: "SYSTEM",
             amountDisplayMode = root.optString("amountDisplayMode", "STANDARD")
                 .takeIf { it in setOf("STANDARD", "COMPACT", "COMPTABLE", "DISCRET") } ?: "STANDARD",
             currencyCode = root.optString("currencyCode", "FCFA").take(12).ifBlank { "FCFA" }

@@ -308,6 +308,39 @@ fun SettingsScreen(
                         onClick = { onThemeModeChange(ThemeMode.LIGHT) }
                     )
                 },
+                showDivider = true
+            )
+
+            // Variantes Glass distinctes des thèmes classiques
+            ListRow(
+                title = "Glass clair",
+                subtitle = "Surfaces translucides, reflets doux et fond lumineux",
+                icon = Icons.Default.LightMode,
+                iconTileColor = if (uiState.themeMode == ThemeMode.GLASS_LIGHT) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                iconTint = if (uiState.themeMode == ThemeMode.GLASS_LIGHT) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = { onThemeModeChange(ThemeMode.GLASS_LIGHT) },
+                trailingContent = {
+                    RadioButton(
+                        selected = uiState.themeMode == ThemeMode.GLASS_LIGHT,
+                        onClick = { onThemeModeChange(ThemeMode.GLASS_LIGHT) }
+                    )
+                },
+                showDivider = true
+            )
+
+            ListRow(
+                title = "Glass sombre",
+                subtitle = "Verre fumé, halos colorés et contours lumineux",
+                icon = Icons.Default.DarkMode,
+                iconTileColor = if (uiState.themeMode == ThemeMode.GLASS_DARK) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                iconTint = if (uiState.themeMode == ThemeMode.GLASS_DARK) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = { onThemeModeChange(ThemeMode.GLASS_DARK) },
+                trailingContent = {
+                    RadioButton(
+                        selected = uiState.themeMode == ThemeMode.GLASS_DARK,
+                        onClick = { onThemeModeChange(ThemeMode.GLASS_DARK) }
+                    )
+                },
                 showDivider = false
             )
         }

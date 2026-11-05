@@ -22,7 +22,7 @@ class ChurchInvitationCodecTest {
             pastorName = "Nom privé",
             logoBase64 = "c21hbGwtaW1hZ2U=",
             accentColorHex = "#3730A3",
-            themeMode = "LIGHT",
+            themeMode = "GLASS_DARK",
             amountDisplayMode = "COMPACT",
             onboardingCompleted = true
         )
@@ -43,6 +43,7 @@ class ChurchInvitationCodecTest {
         assertEquals("Église de Kandi", decoded.profile.churchName)
         assertEquals("c21hbGwtaW1hZ2U=", decoded.profile.logoBase64)
         assertEquals("#3730A3", decoded.profile.accentColorHex)
+        assertEquals("GLASS_DARK", decoded.profile.themeMode)
         assertTrue(decoded.profile.onboardingCompleted)
     }
 
