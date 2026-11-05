@@ -7,6 +7,7 @@ import com.example.data.MemberEntity
 import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -36,8 +37,8 @@ data class SyncBundle(
     val projectUidByTransactionUid: Map<String, String> = emptyMap(),
     /** registerUid stable, keyed par UID d'écriture; supporte les changements de nom. */
     val registerUidByTransactionUid: Map<String, String> = emptyMap(),
-    /** Les fichiers sync actuels transportent l'indicateur, pas les octets du reçu. */
-    val transactionUidsWithReceipts: Set<String> = emptySet()
+    /** Justificatifs binaires indexés par l'UID de l'écriture. */
+    val receiptFilesByTransactionUid: Map<String, ByteArray> = emptyMap()
 ) {
     val transactionCount: Int get() = transactions.size
 }
@@ -45,9 +46,13 @@ data class SyncBundle(
 object SyncBundleCodec {
 
     const val FORMAT = "lumina-sync"
-    const val VERSION = 2
+    const val VERSION = 3
 
     class UnsupportedFormat(message: String) : Exception(message)
+
+    private const val MAX_RECEIPTS = 10_000
+    private const val MAX_RECEIPT_BYTES = 32 * 1024 * 1024
+    private const val MAX_TOTAL_RECEIPT_BYTES = 100 * 1024 * 1024
 
     fun encode(bundle: SyncBundle): ByteArray {
         val root = JSONObject()
@@ -172,6 +177,25 @@ object SyncBundleCodec {
             )
         }
         root.put("transactions", transactions)
+
+        val transactionUidsWithReceipts = bundle.transactions.filter { it.hasReceipt }.map { it.uid }.toSet()
+        require(bundle.receiptFilesByTransactionUid.size <= MAX_RECEIPTS) { "Trop de justificatifs dans le fichier d'échange" }
+        var receiptBytes = 0L
+        val receipts = JSONObject()
+        bundle.receiptFilesByTransactionUid.forEach { (uid, bytes) ->
+            require(uid.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Identifiant de justificatif invalide" }
+            require(uid in transactionUidsWithReceipts) {
+                "Justificatif sans écriture correspondante"
+            }
+            require(bytes.isNotEmpty() && bytes.size <= MAX_RECEIPT_BYTES) { "Un justificatif est vide ou dépasse la taille autorisée" }
+            receiptBytes += bytes.size
+            require(receiptBytes <= MAX_TOTAL_RECEIPT_BYTES) { "Les justificatifs dépassent la taille autorisée" }
+            receipts.put(uid, Base64.encodeToString(bytes, Base64.NO_WRAP))
+        }
+        require(bundle.transactions.filter { it.hasReceipt }.all { it.uid in bundle.receiptFilesByTransactionUid }) {
+            "Un justificatif est absent. Le fichier d'échange n'a pas été créé."
+        }
+        root.put("receiptFiles", receipts)
 
         return root.toString().toByteArray(Charsets.UTF_8)
     }
@@ -298,6 +322,34 @@ object SyncBundleCodec {
             )
         }
 
+        val receiptFilesByTransactionUid = linkedMapOf<String, ByteArray>()
+        val receiptObject = root.optJSONObject("receiptFiles") ?: JSONObject()
+        var totalReceiptBytes = 0L
+        val transactionUids = transactions.map { it.uid }.toSet()
+        val receiptKeys = receiptObject.keys()
+        while (receiptKeys.hasNext()) {
+            val uid = receiptKeys.next()
+            require(uid.matches(Regex("[A-Za-z0-9_-]{1,128}")) &&
+                uid in transactionUids && uid in transactionUidsWithReceipts
+            ) {
+                "Le fichier d'échange contient un justificatif sans écriture correspondante"
+            }
+            val encoded = receiptObject.optString(uid)
+            val bytes = try {
+                Base64.decode(encoded, Base64.DEFAULT)
+            } catch (_: IllegalArgumentException) {
+                throw UnsupportedFormat("Justificatif illisible dans le fichier d'échange")
+            }
+            require(bytes.isNotEmpty() && bytes.size <= MAX_RECEIPT_BYTES) { "Un justificatif est vide ou dépasse la taille autorisée" }
+            totalReceiptBytes += bytes.size
+            require(totalReceiptBytes <= MAX_TOTAL_RECEIPT_BYTES) { "Les justificatifs dépassent la taille autorisée" }
+            receiptFilesByTransactionUid[uid] = bytes
+        }
+        require(receiptFilesByTransactionUid.size <= MAX_RECEIPTS) { "Trop de justificatifs dans le fichier d'échange" }
+        require(transactionUidsWithReceipts.all { it in receiptFilesByTransactionUid }) {
+            "Ce fichier de synchronisation ne contient pas tous les justificatifs annoncés. Aucune fusion effectuée."
+        }
+
         return SyncBundle(
             churchName = root.optString("churchName"),
             churchUid = root.optString("churchUid", ""),
@@ -312,7 +364,7 @@ object SyncBundleCodec {
             transactions = transactions,
             projectUidByTransactionUid = transactionProjectUids,
             registerUidByTransactionUid = transactionRegisterUids,
-            transactionUidsWithReceipts = transactionUidsWithReceipts
+            receiptFilesByTransactionUid = receiptFilesByTransactionUid
         )
     }
 

@@ -16,6 +16,7 @@ import com.example.data.TransactionRepository
 import com.example.data.TransactionType
 import com.example.data.UserEntity
 import com.example.data.UserRole
+import com.example.sync.SyncConflictItem
 import com.example.sync.SyncManager
 import com.example.util.PinHasher
 import com.example.export.ReportExporter
@@ -215,7 +216,9 @@ data class FinancialUiState(
     val canManageUsers: Boolean = true,
     val isDemoMode: Boolean = false,
     val workspaceId: String = "default",
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val syncConflicts: List<SyncConflictItem> = emptyList(),
+    val syncConflictHistory: List<SyncConflictItem> = emptyList()
 )
 
 /** Événement destiné à une notification système locale. */
@@ -249,6 +252,8 @@ class FinancialViewModel(
     private val _amountDisplayMode = MutableStateFlow<AmountDisplayMode?>(null)
     private val _selectedCashRegisterId = MutableStateFlow<Long?>(null)
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
+    private val _syncConflicts = MutableStateFlow<List<SyncConflictItem>>(emptyList())
+    private val _syncConflictHistory = MutableStateFlow<List<SyncConflictItem>>(emptyList())
 
     private val _eventFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val eventFlow: SharedFlow<String> = _eventFlow.asSharedFlow()
@@ -280,12 +285,18 @@ class FinancialViewModel(
         _customPeriodRange,
         _demoMode,
         _demoProfile,
-        _demoTransactions
+        _demoTransactions,
+        _syncConflicts,
+        _syncConflictHistory
     ) { args: Array<Any?> ->
         val demoMode = args[21] as Boolean
         val demoProfile = args[22] as ChurchProfileEntity
         @Suppress("UNCHECKED_CAST")
         val demoTransactions = args[23] as List<TransactionEntity>
+        @Suppress("UNCHECKED_CAST")
+        val syncConflicts = if (demoMode) emptyList() else args[24] as List<SyncConflictItem>
+        @Suppress("UNCHECKED_CAST")
+        val syncConflictHistory = if (demoMode) emptyList() else args[25] as List<SyncConflictItem>
         @Suppress("UNCHECKED_CAST")
         val allTx = if (demoMode) demoTransactions else args[0] as List<TransactionEntity>
         @Suppress("UNCHECKED_CAST")
@@ -628,7 +639,9 @@ class FinancialViewModel(
             canManageUsers = currentUser?.roleValue?.canManageUsers ?: true,
             isDemoMode = demoMode,
             workspaceId = repository.workspaceId,
-            isLoading = false
+            isLoading = false,
+            syncConflicts = syncConflicts,
+            syncConflictHistory = syncConflictHistory
         )
     }
         // Les agrégats (soldes, budgets, graphiques) sont calculés hors du fil
@@ -875,14 +888,16 @@ class FinancialViewModel(
                 val syncRoot = java.io.File(context.cacheDir, "echanges")
                 val directory = if (repository.workspaceId == "default") syncRoot
                     else java.io.File(syncRoot, repository.workspaceId)
-                val file = SyncManager.exportFile(
-                    context = context,
-                    repository = repository,
-                    profile = state.profile,
-                    passphrase = passphrase,
-                    authorName = state.currentUser?.displayName ?: "",
-                    directory = directory
-                )
+                val file = withContext(Dispatchers.IO) {
+                    SyncManager.exportFile(
+                        context = context.applicationContext,
+                        repository = repository,
+                        profile = state.profile,
+                        passphrase = passphrase,
+                        authorName = state.currentUser?.displayName ?: "",
+                        directory = directory
+                    )
+                }
                 onReady(file)
                 _eventFlow.emit("Fichier d'échange prêt (${state.periodTransactions.size} écritures de la période)")
             } catch (e: Exception) {
@@ -895,12 +910,65 @@ class FinancialViewModel(
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
             try {
-                val report = SyncManager.importFile(context, repository, uri, passphrase)
+                val report = withContext(Dispatchers.IO) {
+                    SyncManager.importFile(context.applicationContext, repository, uri, passphrase)
+                }
+                refreshSyncConflicts(context)
                 val message = "Fusion avec ${report.sourceChurch.ifBlank { "un autre appareil" }} : ${report.summary()}"
                 _eventFlow.emit(message)
                 _notificationFlow.emit(NotificationEvent("Synchronisation terminée", message))
             } catch (e: Exception) {
                 _eventFlow.emit("Import impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun refreshSyncConflicts(context: Context) {
+        if (_demoMode.value) {
+            _syncConflicts.value = emptyList()
+            _syncConflictHistory.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    SyncManager.pendingConflicts(context.applicationContext, repository) to
+                        SyncManager.conflictHistory(context.applicationContext, repository)
+                }
+            }.onSuccess { (pending, history) ->
+                _syncConflicts.value = pending
+                _syncConflictHistory.value = history
+            }.onFailure { _eventFlow.emit("Journal de synchronisation illisible : ${it.localizedMessage}") }
+        }
+    }
+
+    fun resolveSyncConflict(
+        context: Context,
+        conflict: SyncConflictItem,
+        useImported: Boolean,
+        passphrase: String
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            if (useImported && passphrase.length < 6) {
+                _eventFlow.emit("Saisissez la phrase de passe du fichier pour prendre la version reçue")
+                return@launch
+            }
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    SyncManager.resolveConflict(
+                        context.applicationContext,
+                        repository,
+                        conflict,
+                        useImported,
+                        passphrase
+                    )
+                }
+                refreshSyncConflicts(context)
+                val decision = if (useImported) "Version reçue appliquée" else "Version locale conservée"
+                _eventFlow.emit("$decision : ${conflict.kind} « ${conflict.label} ». ${report.summary()}")
+            } catch (e: Exception) {
+                _eventFlow.emit("Arbitrage impossible : ${e.localizedMessage}")
             }
         }
     }

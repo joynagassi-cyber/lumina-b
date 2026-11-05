@@ -43,13 +43,15 @@ class SyncBundleTest {
             cashRegisterId = register.id,
             cashRegisterName = register.name,
             projectId = project.id,
-            uid = "transaction-uid"
+            uid = "transaction-uid",
+            receiptPhotoUri = "/private/receipt.jpg"
         )
         val original = SyncBundle(
             registers = listOf(register),
             projects = listOf(project),
             budgets = listOf(BudgetEntity(categoryName = "Dons", amountCents = 500_000, monthYearKey = "2026-11")),
-            transactions = listOf(transaction)
+            transactions = listOf(transaction),
+            receiptFilesByTransactionUid = mapOf("transaction-uid" to byteArrayOf(1, 2, 3, 4))
         )
 
         val decoded = SyncBundleCodec.decode(SyncBundleCodec.encode(original))
@@ -58,22 +60,34 @@ class SyncBundleTest {
         assertEquals("project-uid", decoded.projects.single().uid)
         assertEquals("project-uid", decoded.projectUidByTransactionUid["transaction-uid"])
         assertEquals("register-uid", decoded.registerUidByTransactionUid["transaction-uid"])
+        assertEquals(listOf<Byte>(1, 2, 3, 4), decoded.receiptFilesByTransactionUid.getValue("transaction-uid").toList())
     }
 
-    @Test
-    fun l_indicateur_de_justificatif_est_conserve_pour_refuser_une_fusion_avec_perte() {
+    @Test(expected = IllegalArgumentException::class)
+    fun export_refuse_un_justificatif_annonce_mais_absent() {
         val transaction = TransactionEntity(
             title = "Facture",
             type = TransactionType.EXPENSE,
             amountCents = 100,
             category = "Frais",
             uid = "tx-with-receipt",
-            receiptPhotoUri = "content://local/private/receipt.jpg"
+            receiptPhotoUri = "/private/receipt.jpg"
         )
+        SyncBundleCodec.encode(SyncBundle(transactions = listOf(transaction)))
+    }
 
-        val decoded = SyncBundleCodec.decode(SyncBundleCodec.encode(SyncBundle(transactions = listOf(transaction))))
+    @Test(expected = IllegalArgumentException::class)
+    fun import_refuse_un_ancien_fichier_sans_les_octets_du_justificatif() {
+        val legacy = JSONObject().apply {
+            put("format", SyncBundleCodec.FORMAT)
+            put("version", 1)
+            put("transactions", org.json.JSONArray().put(JSONObject().apply {
+                put("uid", "tx-with-receipt")
+                put("hasReceipt", true)
+            }))
+        }.toString().toByteArray(Charsets.UTF_8)
 
-        assertEquals(setOf("tx-with-receipt"), decoded.transactionUidsWithReceipts)
+        SyncBundleCodec.decode(legacy)
     }
 
     @Test

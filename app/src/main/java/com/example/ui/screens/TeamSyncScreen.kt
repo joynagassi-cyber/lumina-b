@@ -42,6 +42,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -58,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.UserEntity
 import com.example.data.UserRole
+import com.example.sync.SyncConflictItem
 import com.example.ui.FinancialUiState
 import com.example.ui.designsystem.LuminaTokens
 
@@ -73,11 +75,16 @@ fun TeamSyncScreen(
     onDeleteUser: (UserEntity) -> Unit,
     onExport: (Context, String, (java.io.File) -> Unit) -> Unit,
     onImport: (Context, android.net.Uri, String) -> Unit,
+    onRefreshConflicts: (Context) -> Unit,
+    onResolveConflict: (Context, SyncConflictItem, Boolean, String) -> Unit,
     onShareFile: (Context, java.io.File) -> Unit,
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    LaunchedEffect(uiState.workspaceId, uiState.isDemoMode) {
+        if (!uiState.isDemoMode) onRefreshConflicts(context)
+    }
     var editing by remember { mutableStateOf<UserEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<UserEntity?>(null) }
@@ -218,6 +225,67 @@ fun TeamSyncScreen(
         )
         Spacer(modifier = Modifier.height(12.dp))
 
+        if (uiState.syncConflicts.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("sync_conflict_journal"),
+                shape = LuminaTokens.ShapeSubCard,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Conflits à arbitrer (${uiState.syncConflicts.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "La copie locale reste active jusqu'à votre choix. Les décisions sont conservées dans le journal de ce dossier.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    uiState.syncConflicts.forEach { conflict ->
+                        HorizontalDivider()
+                        Text("${conflict.kind} : ${conflict.label}", fontWeight = FontWeight.SemiBold)
+                        Text("Sur cet appareil : ${conflict.localValue}", style = MaterialTheme.typography.bodySmall)
+                        Text("Reçu : ${conflict.incomingValue}", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(
+                                onClick = { onResolveConflict(context, conflict, false, passphrase) },
+                                enabled = uiState.canWrite,
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Garder ici") }
+                            Button(
+                                onClick = { onResolveConflict(context, conflict, true, passphrase) },
+                                enabled = uiState.canWrite && passphrase.length >= 6,
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Prendre la version reçue") }
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        if (uiState.syncConflictHistory.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("sync_conflict_history"),
+                shape = LuminaTokens.ShapeSubCard,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Journal des arbitrages", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    uiState.syncConflictHistory.forEach { entry ->
+                        Text("${entry.kind} : ${entry.label}", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (entry.resolution == "USE_IMPORTED") "Décision : version reçue appliquée"
+                            else "Décision : version locale conservée",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text("Local : ${entry.localValue}  ·  Reçu : ${entry.incomingValue}", style = MaterialTheme.typography.labelSmall)
+                        HorizontalDivider()
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         OutlinedTextField(
             value = passphrase,
             onValueChange = { passphrase = it },
@@ -256,9 +324,8 @@ fun TeamSyncScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "L'échange inclut l'église, caisses, catégories, budgets, projets, écritures et membres. " +
-                "Les comptes et PIN restent sur chaque appareil. Les reçus ne sont pas transportés par ce fichier : " +
-                "si une écriture en possède, l'import est bloqué; utilisez l'archive Lumina complète (ZIP).",
+            text = "L'échange chiffré inclut l'église, caisses, catégories, budgets, projets, écritures, membres et justificatifs. " +
+                "Les comptes et PIN restent sur chaque appareil. Si un justificatif local est inaccessible, l'export s'arrête sans créer un fichier incomplet.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

@@ -269,6 +269,34 @@ object BackupService {
         return BackupPayload(BackupCodec.decode(text))
     }
 
+    /** Pièces jointes pour l'échange incrémental : seules les copies privées du dossier sont autorisées. */
+    internal fun collectReceiptFilesForSync(
+        context: Context,
+        workspaceId: String,
+        transactions: List<com.example.data.TransactionEntity>
+    ): Map<String, ByteArray> = collectReceiptFiles(
+        context,
+        BackupSnapshot(transactions = transactions),
+        workspaceId
+    )
+
+    internal fun writeReceiptFilesForSync(
+        context: Context,
+        workspaceId: String,
+        receipts: Map<String, ByteArray>
+    ): Map<String, String> = writeReceiptFiles(context, workspaceId, receipts)
+
+    internal fun deleteReceiptFilesForSync(context: Context, workspaceId: String, paths: Collection<String>) {
+        val allowedDirectory = receiptDirectory(context, workspaceId).canonicalFile
+        paths.forEach { path ->
+            runCatching {
+                val file = File(path).canonicalFile
+                require(file.path.startsWith(allowedDirectory.path + File.separator))
+                file.delete()
+            }
+        }
+    }
+
     private fun collectReceiptFiles(
         context: Context,
         snapshot: BackupSnapshot,
@@ -281,7 +309,7 @@ object BackupService {
                 val source = File(transaction.receiptPhotoUri).canonicalFile
                 require(source.isFile && source.path.startsWith(allowedDirectory.path + File.separator))
                 val bytes = source.readBytes()
-                require(bytes.size <= 32 * 1024 * 1024)
+                require(bytes.isNotEmpty() && bytes.size <= 32 * 1024 * 1024)
                 transaction.uid to bytes
             }.getOrNull()
         }.toMap()

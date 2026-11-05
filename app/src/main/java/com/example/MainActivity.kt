@@ -972,6 +972,10 @@ fun LuminaApp(
                         onDeleteUser = { user -> viewModel.deleteUser(user) },
                         onExport = { ctx, phrase, onReady -> viewModel.exportSyncFile(ctx, phrase, onReady) },
                         onImport = { ctx, uri, phrase -> viewModel.importSyncFile(ctx, uri, phrase) },
+                        onRefreshConflicts = { ctx -> viewModel.refreshSyncConflicts(ctx) },
+                        onResolveConflict = { ctx, conflict, useImported, phrase ->
+                            viewModel.resolveSyncConflict(ctx, conflict, useImported, phrase)
+                        },
                         onShareFile = { ctx, file ->
                             com.example.export.ReportExporter.shareFile(
                                 ctx,
