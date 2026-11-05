@@ -119,15 +119,21 @@ object SyncManager {
         require(encrypted.size <= MAX_SYNC_FILE_BYTES) { "Le fichier d'échange dépasserait la taille maximale autorisée." }
 
         directory.mkdirs()
-        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmm", java.util.Locale.FRANCE)
+        val stamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.FRANCE)
             .format(java.util.Date())
         val safeName = profile.displayName
             .replace(Regex("[^A-Za-z0-9 ]"), "")
             .trim()
             .replace(" ", "_")
             .ifBlank { "Eglise" }
-        val file = File(directory, "Lumina_${safeName}_$stamp.lumina")
-        file.writeBytes(encrypted)
+        val file = File(directory, "Lumina_${safeName}_${stamp}_${UUID.randomUUID()}.lumina")
+        val temp = File(directory, ".${file.name}.tmp")
+        try {
+            temp.writeBytes(encrypted)
+            check(temp.renameTo(file)) { "Impossible d'enregistrer le fichier d'échange." }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
         return file
     }
 
@@ -533,6 +539,14 @@ object SyncManager {
             while (true) {
                 val read = stream.read(buffer)
                 if (read < 0) break
+                if (read == 0) {
+                    val single = stream.read()
+                    if (single < 0) break
+                    total++
+                    require(total <= MAX_SYNC_FILE_BYTES) { "Le fichier dépasse la taille maximale autorisée." }
+                    output.write(single)
+                    continue
+                }
                 total += read
                 require(total <= MAX_SYNC_FILE_BYTES) { "Le fichier dépasse la taille maximale autorisée." }
                 output.write(buffer, 0, read)

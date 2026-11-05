@@ -51,7 +51,7 @@ object BackupService {
         withContext(Dispatchers.IO) {
             runCatching {
                 val dir = workspaceDirectory(context.filesDir, AUTO_DIR, repository.workspaceId).apply { mkdirs() }
-                val existing = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                val existing = autoBackupFiles(dir)
                 val newest = existing.lastOrNull()
                 val fresh = newest != null &&
                     System.currentTimeMillis() - newest.lastModified() < AUTO_INTERVAL_MS
@@ -64,11 +64,17 @@ object BackupService {
 
                 val receipts = collectReceiptFiles(context, snapshot, repository.workspaceId)
                 val archive = LuminaArchiveCodec.encode(snapshot, receipts)
-                val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.FRANCE).format(Date())
-                val file = File(dir, "$AUTO_PREFIX$stamp.zip")
-                file.writeBytes(archive)
+                val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.FRANCE).format(Date())
+                val file = File(dir, "$AUTO_PREFIX${stamp}_${UUID.randomUUID()}.zip")
+                val temp = File(dir, ".${file.name}.tmp")
+                try {
+                    temp.writeBytes(archive)
+                    check(temp.renameTo(file)) { "Impossible d'enregistrer la copie automatique." }
+                } finally {
+                    if (temp.exists()) temp.delete()
+                }
 
-                val all = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
+                val all = autoBackupFiles(dir)
                 all.dropLast(AUTO_KEEP.coerceAtLeast(1))
                     .forEach { if (it.name != file.name) it.delete() }
                 file
@@ -77,8 +83,14 @@ object BackupService {
 
     fun latestAutoFile(context: Context, workspaceId: String = "default"): File? {
         val dir = workspaceDirectory(context.filesDir, AUTO_DIR, workspaceId)
-        return dir.listFiles()?.sortedBy { it.name }?.lastOrNull()
+        return autoBackupFiles(dir).lastOrNull()
     }
+
+    private fun autoBackupFiles(directory: File): List<File> =
+        directory.listFiles()
+            ?.filter { it.isFile && it.name.startsWith(AUTO_PREFIX) && it.extension == "zip" }
+            ?.sortedBy { it.name }
+            ?: emptyList()
 
     suspend fun restoreLatestAuto(
         context: Context,
@@ -112,7 +124,7 @@ object BackupService {
         } else archive
 
         val dir = workspaceDirectory(context.cacheDir, EXPORT_DIR, repository.workspaceId).apply { mkdirs() }
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.FRANCE).format(Date())
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.FRANCE).format(Date())
         val safeName = (portableSnapshot.profile?.displayName ?: portableSnapshot.churchName)
             .replace(Regex("[^A-Za-z0-9 ]"), "")
             .trim()
@@ -120,9 +132,15 @@ object BackupService {
             .ifBlank { "Eglise" }
         val file = File(
             dir,
-            "Lumina_${safeName}_$stamp" + if (encrypted) ".lumina" else ".lumina.zip"
+            "Lumina_${safeName}_${stamp}_${UUID.randomUUID()}" + if (encrypted) ".lumina" else ".lumina.zip"
         )
-        file.writeBytes(content)
+        val temp = File(dir, ".${file.name}.tmp")
+        try {
+            temp.writeBytes(content)
+            check(temp.renameTo(file)) { "Impossible d'enregistrer la sauvegarde." }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
         ExportResult(
             file = file,
             encrypted = encrypted,
@@ -371,6 +389,16 @@ object BackupService {
             while (true) {
                 val count = it.read(buffer)
                 if (count < 0) break
+                if (count == 0) {
+                    val single = it.read()
+                    if (single < 0) break
+                    total++
+                    require(total <= MAX_INPUT_BYTES) {
+                        "Le fichier dépasse la taille maximale autorisée."
+                    }
+                    output.write(single)
+                    continue
+                }
                 total += count
                 require(total <= MAX_INPUT_BYTES) {
                     "Le fichier dépasse la taille maximale autorisée."

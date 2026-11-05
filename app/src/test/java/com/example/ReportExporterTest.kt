@@ -22,7 +22,7 @@ class ReportExporterTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val csv = ReportExporter.generateCsvExport(
             context = context,
-            periodLabel = "Novembre",
+            periodLabel = "Novembre\n=HYPERLINK(\"https://bad\")",
             transactions = listOf(
                 TransactionEntity(
                     title = "=HYPERLINK(\"https://bad\")",
@@ -36,7 +36,8 @@ class ReportExporterTest {
             totalIncomeCents = 0,
             totalExpenseCents = 100,
             netBalanceCents = -100,
-            generatedBy = "Awa Bio — Comptable"
+            profile = ChurchProfileEntity(churchName = "Église de Kandi\n=HYPERLINK(\"https://bad\")"),
+            generatedBy = "Awa Bio — Comptable\n=HYPERLINK(\"https://bad\")"
         )
         val text = csv.readText(Charsets.UTF_8)
         assertTrue(text.contains("'=HYPERLINK"))
@@ -44,6 +45,8 @@ class ReportExporterTest {
         assertTrue(text.contains("ligne 1 ligne 2"))
         assertTrue(text.contains("# Établi par: Awa Bio — Comptable"))
         assertTrue(text.contains("Awa Bio — Comptable"))
+        assertTrue(text.contains("# Église de Kandi =HYPERLINK"))
+        assertTrue(text.lineSequence().none { it.startsWith("=") })
         csv.delete()
     }
 

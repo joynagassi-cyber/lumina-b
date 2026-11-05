@@ -599,9 +599,9 @@ fun SettingsScreen(
             ListRow(
                 title = "Copie automatique",
                 subtitle = if (lastAutoBackupLabel.isBlank()) {
-                    "Une copie de secours est conservée chaque jour dans l'application."
+                    "Copie locale quotidienne (3 dernières). Elle ne quitte pas cet appareil : exportez aussi le dossier sur un support externe."
                 } else {
-                    "Dernière copie : $lastAutoBackupLabel"
+                    "Dernière copie locale : $lastAutoBackupLabel. Exportez aussi le dossier sur un support externe."
                 },
                 icon = Icons.Default.Security,
                 iconTileColor = MaterialTheme.colorScheme.secondaryContainer,

@@ -33,10 +33,10 @@ object ChurchInvitationService {
         require(encrypted.size <= MAX_ENCRYPTED_INVITE_BYTES) { "Le fichier d'invitation est trop volumineux." }
 
         val directory = File(context.cacheDir, "invitations/${repository.workspaceId}").apply { mkdirs() }
-        val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.FRANCE).format(Date())
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.FRANCE).format(Date())
         val safeName = profile.displayName.replace(Regex("[^A-Za-z0-9 ]"), "")
             .trim().replace(Regex("\\s+"), "_").ifBlank { "Eglise" }
-        val file = File(directory, "Lumina_${safeName}_$stamp.lumina-invite")
+        val file = File(directory, "Lumina_${safeName}_${stamp}_${UUID.randomUUID()}.lumina-invite")
         val temp = File(directory, ".${file.name}.${UUID.randomUUID()}.tmp")
         try {
             temp.writeBytes(encrypted)
@@ -94,8 +94,14 @@ object ChurchInvitationService {
             var count = 0
             while (count < buffer.size) {
                 val read = stream.read(buffer, count, buffer.size - count)
-                if (read <= 0) break
-                count += read
+                if (read < 0) break
+                if (read == 0) {
+                    val single = stream.read()
+                    if (single < 0) break
+                    buffer[count++] = single.toByte()
+                } else {
+                    count += read
+                }
             }
             if (count <= 0) byteArrayOf() else buffer.copyOf(count)
         }
@@ -111,7 +117,16 @@ object ChurchInvitationService {
             while (true) {
                 val read = stream.read(buffer)
                 if (read < 0) break
-                if (read == 0) continue
+                if (read == 0) {
+                    val single = stream.read()
+                    if (single < 0) break
+                    total++
+                    require(total <= maximumBytes) {
+                        "Ce fichier chiffré n'est pas une invitation légère. Pour rejoindre avec un dossier complet, choisissez son archive Lumina ZIP."
+                    }
+                    output.write(single)
+                    continue
+                }
                 total += read
                 require(total <= maximumBytes) {
                     "Ce fichier chiffré n'est pas une invitation légère. Pour rejoindre avec un dossier complet, choisissez son archive Lumina ZIP."

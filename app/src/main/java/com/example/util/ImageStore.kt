@@ -27,7 +27,7 @@ object ImageStore {
         val bitmap = decodeScaled(context, uri, maxDimension) ?: return null
         return try {
             val output = ByteArrayOutputStream()
-            bitmap.compress(Bitmap.CompressFormat.PNG, 90, output)
+            if (!bitmap.compress(Bitmap.CompressFormat.PNG, 90, output)) return null
             Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
         } finally {
             bitmap.recycle()
@@ -63,7 +63,7 @@ object ImageStore {
         if (base64.isBlank()) return null
         return try {
             val bytes = Base64.decode(base64, Base64.DEFAULT)
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            decodeScaled(bytes, LOGO_MAX_DIMENSION)
         } catch (e: Exception) {
             null
         }
@@ -73,7 +73,7 @@ object ImageStore {
         if (path.isBlank()) return null
         return try {
             val file = File(path)
-            if (!file.exists()) null else BitmapFactory.decodeFile(file.absolutePath)
+            if (!file.isFile) null else decodeScaled(file, RECEIPT_MAX_DIMENSION)
         } catch (e: Exception) {
             null
         }
@@ -85,27 +85,57 @@ object ImageStore {
             context.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream, null, bounds)
             }
-            val largest = maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
-            var sample = 1
-            while (largest / sample > maxDimension * 2) sample *= 2
-
-            val options = BitmapFactory.Options().apply { inSampleSize = sample }
+            val options = BitmapFactory.Options().apply { inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension) }
             val decoded = context.contentResolver.openInputStream(uri)?.use { stream ->
                 BitmapFactory.decodeStream(stream, null, options)
             } ?: return null
-
-            val currentLargest = maxOf(decoded.width, decoded.height)
-            if (currentLargest <= maxDimension) {
-                decoded
-            } else {
-                val ratio = maxDimension.toFloat() / currentLargest.toFloat()
-                val width = (decoded.width * ratio).toInt().coerceAtLeast(1)
-                val height = (decoded.height * ratio).toInt().coerceAtLeast(1)
-                val scaled = Bitmap.createScaledBitmap(decoded, width, height, true)
-                if (scaled !== decoded) decoded.recycle()
-                scaled
-            }
+            fitToMaxDimension(decoded, maxDimension)
         } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun decodeScaled(bytes: ByteArray, maxDimension: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+        }
+        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
+        return fitToMaxDimension(decoded, maxDimension)
+    }
+
+    private fun decodeScaled(file: File, maxDimension: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+        }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        return fitToMaxDimension(decoded, maxDimension)
+    }
+
+    private fun sampleSize(width: Int, height: Int, maxDimension: Int): Int {
+        val largest = maxOf(width, height).coerceAtLeast(1)
+        var sample = 1
+        while (largest / sample > maxDimension * 2 && sample <= Int.MAX_VALUE / 2) {
+            sample *= 2
+        }
+        return sample
+    }
+
+    private fun fitToMaxDimension(decoded: Bitmap, maxDimension: Int): Bitmap? {
+        val currentLargest = maxOf(decoded.width, decoded.height)
+        if (currentLargest <= maxDimension) return decoded
+        return try {
+            val ratio = maxDimension.toFloat() / currentLargest.toFloat()
+            val width = (decoded.width * ratio).toInt().coerceAtLeast(1)
+            val height = (decoded.height * ratio).toInt().coerceAtLeast(1)
+            Bitmap.createScaledBitmap(decoded, width, height, true).also {
+                if (it !== decoded) decoded.recycle()
+            }
+        } catch (_: Exception) {
+            decoded.recycle()
             null
         }
     }

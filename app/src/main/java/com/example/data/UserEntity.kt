@@ -32,8 +32,8 @@ enum class UserRole(
 /**
  * Personne autorisée à utiliser l'application sur cet appareil.
  *
- * Le code PIN n'est jamais stocké en clair : seuls un sel aléatoire et
- * l'empreinte SHA-256 (sel + PIN) sont conservés.
+ * Le code PIN n'est jamais stocké en clair : seul un sel aléatoire et un
+ * hachage PBKDF2 lent sont conservés (les anciens hachages sont migrés à la connexion).
  */
 @Entity(
     tableName = "app_users",

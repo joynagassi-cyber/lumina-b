@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -41,10 +42,19 @@ object ReportExporter {
     private const val MARGIN = 36f
     private const val ACCENT_DEFAULT = 0xFF3730A3.toInt()
 
-    private val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
-    private val timeFormat = SimpleDateFormat("HH:mm", Locale.FRANCE)
-    private val fullDateTimeFormat = SimpleDateFormat("dd/MM/yyyy à HH:mm", Locale.FRANCE)
-    private val monthLabelFormat = SimpleDateFormat("MMMM yyyy", Locale.FRANCE)
+    private class DateFormatter(pattern: String) : ThreadLocal<SimpleDateFormat>() {
+        private val formatPattern = pattern
+        override fun initialValue(): SimpleDateFormat = SimpleDateFormat(formatPattern, Locale.FRANCE)
+    }
+
+    // SimpleDateFormat is mutable and not thread-safe; report exports run on IO dispatchers.
+    private val dateFormat = DateFormatter("dd/MM/yyyy")
+    private val timeFormat = DateFormatter("HH:mm")
+    private val fullDateTimeFormat = DateFormatter("dd/MM/yyyy à HH:mm")
+
+    private fun formatDate(date: Date = Date()): String = dateFormat.get().format(date)
+    private fun formatTime(date: Date): String = timeFormat.get().format(date)
+    private fun formatDateTime(date: Date = Date()): String = fullDateTimeFormat.get().format(date)
 
     // ---------------------------------------------------------------------
     // Bilan PDF
@@ -71,7 +81,7 @@ object ReportExporter {
             .trim()
             .replace(" ", "_")
             .ifBlank { "Bilan" }
-        val pdfFile = File(cacheDir, "${safeName}_${System.currentTimeMillis()}.pdf")
+        val pdfFile = File(cacheDir, "${safeName}_${System.currentTimeMillis()}_${UUID.randomUUID()}.pdf")
 
         val accent = runCatching {
             AndroidColor.parseColor(profile.accentColorHex)
@@ -108,7 +118,7 @@ object ReportExporter {
             periodStartMillis > 0L -> periodStartMillis
             else -> transactions.minOfOrNull { it.timestamp } ?: reportEnd
         }
-        val periodRangeLabel = "${dateFormat.format(Date(reportStart))} → ${dateFormat.format(Date(reportEnd))}"
+        val periodRangeLabel = "${formatDate(Date(reportStart))} → ${formatDate(Date(reportEnd))}"
         val docRef = documentNumber.ifBlank {
             "RG-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.FRANCE).format(Date())
         }
@@ -125,7 +135,7 @@ object ReportExporter {
             val footerPaint = textPaint(7.5f, AndroidColor.rgb(148, 163, 184))
             footerPaint.textAlign = Paint.Align.CENTER
             canvas.drawLine(MARGIN, PAGE_HEIGHT - 34f, PAGE_WIDTH - MARGIN, PAGE_HEIGHT - 34f, rulePaint)
-            val base = "$text Page $pageNumber  •  ${profile.displayName}  •  Édité le ${dateFormat.format(Date())}"
+            val base = "$text Page $pageNumber  •  ${profile.displayName}  •  Édité le ${formatDate()}"
             canvas.drawText(base, PAGE_WIDTH / 2f, PAGE_HEIGHT - 20f, footerPaint)
         }
 
@@ -224,7 +234,7 @@ object ReportExporter {
         val signatories = buildList {
             if (profile.pastorName.isNotBlank()) add("Responsable : ${profile.pastorName}")
             if (profile.treasurerName.isNotBlank()) add("Trésorier : ${profile.treasurerName}")
-            add("Édité le ${fullDateTimeFormat.format(Date())}")
+            add("Édité le ${formatDateTime()}")
             add("Saisie : $issuedBy")
         }.joinToString("   •   ")
         canvas.drawText(signatories.take(150), MARGIN, currentY, smallPaint)
@@ -766,7 +776,7 @@ object ReportExporter {
                     canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 22f, cardBgPaint)
                 }
                 val title = if (tx.note.isNotBlank()) "${tx.title} — ${tx.note}" else tx.title
-                canvas.drawText(dateFormat.format(Date(tx.timestamp)), colDate + 4f, currentY + 10f, regularPaint)
+                canvas.drawText(formatDate(Date(tx.timestamp)), colDate + 4f, currentY + 10f, regularPaint)
                 canvas.drawText(tx.cashRegisterName.take(15), colCaisse, currentY + 10f, regularPaint)
                 canvas.drawText(tx.category.take(18), colCat, currentY + 10f, regularPaint)
                 canvas.drawText(title.take(32), colTitle, currentY + 10f, regularPaint)
@@ -825,7 +835,7 @@ object ReportExporter {
         )
         currentY += 14f
         canvas.drawText(
-            "Montants exprimés en $currencyCode, arrêtés au ${dateFormat.format(Date(reportEnd))} " +
+            "Montants exprimés en $currencyCode, arrêtés au ${formatDate(Date(reportEnd))} " +
                 "(base : comptabilité de trésorerie).",
             MARGIN,
             currentY,
@@ -865,9 +875,12 @@ object ReportExporter {
         footer()
         document.finishPage(page)
 
-        FileOutputStream(pdfFile).use { out -> document.writeTo(out) }
-        document.close()
-        if (logo != null && !logo.isRecycled) logo.recycle()
+        try {
+            FileOutputStream(pdfFile).use { out -> document.writeTo(out) }
+        } finally {
+            document.close()
+            if (logo != null && !logo.isRecycled) logo.recycle()
+        }
 
         return pdfFile
     }
@@ -886,7 +899,7 @@ object ReportExporter {
         require(columns.isNotEmpty()) { "Le rapport doit avoir au moins une colonne" }
         val cacheDir = reportDirectory(context, workspaceId)
         val safeTitle = title.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifBlank { "Rapport" }
-        val file = File(cacheDir, "${safeTitle}_${System.currentTimeMillis()}.pdf")
+        val file = File(cacheDir, "${safeTitle}_${System.currentTimeMillis()}_${UUID.randomUUID()}.pdf")
         val accent = runCatching { AndroidColor.parseColor(profile.accentColorHex) }.getOrDefault(ACCENT_DEFAULT)
         val doc = PdfDocument()
         val margin = 34f
@@ -912,7 +925,7 @@ object ReportExporter {
             canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), 8f, bandPaint)
             canvas.drawText(profile.displayName.take(50), margin, 30f, subtitlePaint)
             canvas.drawText(title.take(60), margin, 57f, titlePaint)
-            canvas.drawText("$periodLabel · Édité le ${dateFormat.format(Date())} · ${rows.size} ligne(s)", margin, 74f, subtitlePaint)
+            canvas.drawText("$periodLabel · Édité le ${formatDate()} · ${rows.size} ligne(s)", margin, 74f, subtitlePaint)
             canvas.drawText("Établi par : ${generatedBy.ifBlank { "Non identifié" }}", margin, 88f, subtitlePaint)
             y = 108f
             val colWidth = contentWidth / columns.size
@@ -979,7 +992,9 @@ object ReportExporter {
         generatedBy: String = ""
     ): File {
         val cacheDir = reportDirectory(context, workspaceId)
-        val csvFile = File(cacheDir, "Releve_${System.currentTimeMillis()}.csv")
+        val csvFile = File(cacheDir, "Releve_${System.currentTimeMillis()}_${UUID.randomUUID()}.csv")
+        fun csvComment(value: String): String = value.replace("\r", " ").replace("\n", " ")
+
         fun csvField(value: String): String {
             val singleLine = value.replace("\r", " ").replace("\n", " ")
             val first = singleLine.trimStart().firstOrNull()
@@ -990,17 +1005,17 @@ object ReportExporter {
         FileOutputStream(csvFile).use { fos ->
             fos.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
             OutputStreamWriter(fos, StandardCharsets.UTF_8).use { writer ->
-                writer.append("# ${profile.displayName} — relevé des opérations\n")
-                writer.append("# Période: ").append(periodLabel).append("\n")
-                writer.append("# Édité le: ").append(fullDateTimeFormat.format(Date())).append("\n")
-                writer.append("# Établi par: ").append(generatedBy.ifBlank { "Non identifié" }).append("\n")
-                writer.append("# Devise: ").append(profile.currencyCode.ifBlank { "FCFA" }).append("\n\n")
+                writer.append("# ${csvComment(profile.displayName)} — relevé des opérations\n")
+                writer.append("# Période: ").append(csvComment(periodLabel)).append("\n")
+                writer.append("# Édité le: ").append(formatDateTime()).append("\n")
+                writer.append("# Établi par: ").append(csvComment(generatedBy.ifBlank { "Non identifié" })).append("\n")
+                writer.append("# Devise: ").append(csvComment(profile.currencyCode.ifBlank { "FCFA" })).append("\n\n")
 
                 writer.append("Date;Heure;Caisse;Nature;Catégorie;Intitulé;Montant;Virement interne;Justificatif;Note;Modifié par\n")
 
                 for (tx in transactions) {
-                    val dateStr = dateFormat.format(Date(tx.timestamp))
-                    val timeStr = timeFormat.format(Date(tx.timestamp))
+                    val dateStr = formatDate(Date(tx.timestamp))
+                    val timeStr = formatTime(Date(tx.timestamp))
                     val nature = when {
                         tx.isTransfer -> "VIREMENT"
                         tx.type == TransactionType.INCOME -> "ENTREE"
@@ -1050,7 +1065,7 @@ object ReportExporter {
         generatedBy: String = ""
     ): File {
         val cacheDir = reportDirectory(context, workspaceId)
-        val file = File(cacheDir, "Releve_${System.currentTimeMillis()}.xlsx")
+        val file = File(cacheDir, "Releve_${System.currentTimeMillis()}_${UUID.randomUUID()}.xlsx")
         fun xml(value: String): String = value
             .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             .replace("\"", "&quot;").replace("'", "&apos;")
@@ -1082,8 +1097,8 @@ object ReportExporter {
             }
             val signedAmount = if (tx.type == TransactionType.INCOME) tx.amountCents else -tx.amountCents
             val cells = listOf(
-                textCell("A$rowNumber", dateFormat.format(Date(tx.timestamp))),
-                textCell("B$rowNumber", timeFormat.format(Date(tx.timestamp))),
+                textCell("A$rowNumber", formatDate(Date(tx.timestamp))),
+                textCell("B$rowNumber", formatTime(Date(tx.timestamp))),
                 textCell("C$rowNumber", tx.cashRegisterName), textCell("D$rowNumber", kind),
                 textCell("E$rowNumber", tx.category), textCell("F$rowNumber", tx.title),
                 numberCell("G$rowNumber", signedAmount), textCell("H$rowNumber", if (tx.isTransfer) "Oui" else "Non"),

@@ -40,11 +40,18 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+private const val PIN_FAILURE_LIMIT = 5
+private const val PIN_INITIAL_LOCK_MS = 30_000L
+private const val PIN_MAX_LOCK_MS = 30L * 60L * 1000L
+private fun isValidLocalPin(pin: String): Boolean = pin.length >= 4 && pin.all { it in '0'..'9' }
 
 enum class PeriodFilter(val label: String) {
     CE_MOIS("Ce mois"),
@@ -261,6 +268,10 @@ class FinancialViewModel(
     private val _amountDisplayMode = MutableStateFlow<AmountDisplayMode?>(null)
     private val _selectedCashRegisterId = MutableStateFlow<Long?>(null)
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
+    private val loginMutex = Mutex()
+    private var failedPinAttempts = 0
+    private var pinLockUntilMillis = 0L
+    private var pinLockoutCount = 0
     private val _syncConflicts = MutableStateFlow<List<SyncConflictItem>>(emptyList())
     private val _syncConflictHistory = MutableStateFlow<List<SyncConflictItem>>(emptyList())
     private val pendingInviteKey = "pending_invited_user_${repository.workspaceId}"
@@ -745,6 +756,55 @@ class FinancialViewModel(
         return false
     }
 
+    private fun loginAttemptPreferences() = appContext?.getSharedPreferences(
+        "lumina_login_attempts",
+        Context.MODE_PRIVATE
+    )
+
+    private fun loginAttemptKey(suffix: String) = "${repository.workspaceId}_$suffix"
+
+    private fun currentPinLockUntil(): Long = loginAttemptPreferences()
+        ?.getLong(loginAttemptKey("lock_until"), pinLockUntilMillis)
+        ?: pinLockUntilMillis
+
+    /** Returns a lock deadline after the fifth bad PIN, with capped exponential backoff. */
+    private fun recordPinFailure(now: Long): Long {
+        val preferences = loginAttemptPreferences()
+        val failuresKey = loginAttemptKey("failures")
+        val lockoutsKey = loginAttemptKey("lockouts")
+        val lockUntilKey = loginAttemptKey("lock_until")
+        val failures = (preferences?.getInt(failuresKey, failedPinAttempts) ?: failedPinAttempts) + 1
+        if (failures < PIN_FAILURE_LIMIT) {
+            failedPinAttempts = failures
+            preferences?.edit()?.putInt(failuresKey, failures)?.apply()
+            return 0L
+        }
+        val lockouts = preferences?.getInt(lockoutsKey, pinLockoutCount) ?: pinLockoutCount
+        val delay = (PIN_INITIAL_LOCK_MS * (1L shl lockouts.coerceIn(0, 6)))
+            .coerceAtMost(PIN_MAX_LOCK_MS)
+        val deadline = now + delay
+        failedPinAttempts = 0
+        pinLockoutCount = lockouts + 1
+        pinLockUntilMillis = deadline
+        preferences?.edit()
+            ?.putInt(failuresKey, 0)
+            ?.putInt(lockoutsKey, pinLockoutCount)
+            ?.putLong(lockUntilKey, deadline)
+            ?.apply()
+        return deadline
+    }
+
+    private fun clearPinFailures() {
+        failedPinAttempts = 0
+        pinLockUntilMillis = 0L
+        pinLockoutCount = 0
+        loginAttemptPreferences()?.edit()
+            ?.remove(loginAttemptKey("failures"))
+            ?.remove(loginAttemptKey("lockouts"))
+            ?.remove(loginAttemptKey("lock_until"))
+            ?.apply()
+    }
+
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
     // ==========================================
@@ -762,22 +822,44 @@ class FinancialViewModel(
 
     fun login(userId: Long, pin: String) {
         viewModelScope.launch {
-            val user = repository.getUserById(userId)
-            if (user == null || !user.isActive || user.isDeleted) {
-                _eventFlow.emit("Utilisateur introuvable ou désactivé")
-                return@launch
+            loginMutex.withLock {
+                val now = System.currentTimeMillis()
+                val lockUntil = currentPinLockUntil()
+                if (lockUntil > now) {
+                    val seconds = ((lockUntil - now + 999L) / 1_000L).coerceAtLeast(1L)
+                    _eventFlow.emit("Trop de tentatives. Réessayez dans $seconds seconde(s).")
+                    return@withLock
+                }
+                val user = repository.getUserById(userId)
+                if (user == null || !user.isActive || user.isDeleted) {
+                    _eventFlow.emit("Utilisateur introuvable ou désactivé")
+                    return@withLock
+                }
+                val ok = if (!user.hasPin) pin.isBlank() else withContext(Dispatchers.Default) {
+                    PinHasher.verify(pin, user.pinSalt, user.pinHash)
+                }
+                if (!ok) {
+                    val deadline = recordPinFailure(now)
+                    if (deadline > now) {
+                        val seconds = ((deadline - now + 999L) / 1_000L).coerceAtLeast(1L)
+                        _eventFlow.emit("Trop de tentatives. Réessayez dans $seconds seconde(s).")
+                    } else {
+                        _eventFlow.emit("Code incorrect")
+                    }
+                    return@withLock
+                }
+
+                val activeUser = if (user.hasPin && PinHasher.needsUpgrade(user.pinHash)) {
+                    val upgradedHash = withContext(Dispatchers.Default) {
+                        PinHasher.hash(pin, user.pinSalt)
+                    }
+                    user.copy(pinHash = upgradedHash, updatedAt = now).also { repository.saveUser(it) }
+                } else user
+                clearPinFailures()
+                repository.touchUserLogin(activeUser.id)
+                _currentUser.value = activeUser.copy(lastLoginAt = now)
+                _eventFlow.emit("Bienvenue ${activeUser.displayName}")
             }
-            val ok = when {
-                !user.hasPin -> pin.isBlank()
-                else -> PinHasher.verify(pin, user.pinSalt, user.pinHash)
-            }
-            if (!ok) {
-                _eventFlow.emit("Code incorrect")
-                return@launch
-            }
-            repository.touchUserLogin(user.id)
-            _currentUser.value = user.copy(lastLoginAt = System.currentTimeMillis())
-            _eventFlow.emit("Bienvenue ${user.displayName}")
         }
     }
 
@@ -785,11 +867,12 @@ class FinancialViewModel(
     fun createFirstUser(displayName: String, role: UserRole, pin: String) {
         viewModelScope.launch {
             val name = displayName.trim()
-            if (name.isBlank() || pin.length < 4) {
-                _eventFlow.emit("Indiquez un nom et un code d'au moins 4 chiffres")
+            if (name.isBlank() || !isValidLocalPin(pin)) {
+                _eventFlow.emit("Indiquez un nom et un code numérique d'au moins 4 chiffres")
                 return@launch
             }
             val salt = PinHasher.newSalt()
+            val pinHash = withContext(Dispatchers.Default) { PinHasher.hash(pin, salt) }
             val id = try {
                 repository.inDatabaseTransaction {
                     check(repository.getUsersCount() == 0) {
@@ -800,7 +883,7 @@ class FinancialViewModel(
                             displayName = name,
                             role = role.name,
                             pinSalt = salt,
-                            pinHash = PinHasher.hash(pin, salt)
+                            pinHash = pinHash
                         )
                     )
                 }
@@ -850,13 +933,20 @@ class FinancialViewModel(
                 _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
                 return@launch
             }
+            if (pin.isNotBlank() && !isValidLocalPin(pin)) {
+                _eventFlow.emit("Le PIN doit contenir au moins 4 chiffres")
+                return@launch
+            }
             val salt = PinHasher.newSalt()
+            val pinHash = if (pin.isBlank()) "" else withContext(Dispatchers.Default) {
+                PinHasher.hash(pin, salt)
+            }
             repository.saveUser(
                 UserEntity(
                     displayName = name,
                     role = role.name,
                     pinSalt = salt,
-                    pinHash = if (pin.isBlank()) "" else PinHasher.hash(pin, salt)
+                    pinHash = pinHash
                 )
             )
             _eventFlow.emit("$name ajouté(e) comme ${role.label}")
@@ -871,16 +961,20 @@ class FinancialViewModel(
                 _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
                 return@launch
             }
+            if (newPin.isNotBlank() && !isValidLocalPin(newPin)) {
+                _eventFlow.emit("Le PIN doit contenir au moins 4 chiffres")
+                return@launch
+            }
             val salt = if (newPin.isBlank()) user.pinSalt else PinHasher.newSalt()
+            val newPinHash = if (newPin.isBlank()) user.pinHash else withContext(Dispatchers.Default) {
+                PinHasher.hash(newPin, salt)
+            }
             repository.saveUser(
                 user.copy(
                     displayName = name,
                     role = role.name,
                     pinSalt = salt,
-                    pinHash = when {
-                        newPin.isBlank() -> user.pinHash
-                        else -> PinHasher.hash(newPin, salt)
-                    },
+                    pinHash = newPinHash,
                     updatedAt = System.currentTimeMillis()
                 )
             )

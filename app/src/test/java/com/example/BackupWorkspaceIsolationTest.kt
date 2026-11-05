@@ -20,8 +20,9 @@ class BackupWorkspaceIsolationTest {
         try {
             val churchA = File(root, "church-a").apply { mkdirs() }
             val churchB = File(root, "church-b").apply { mkdirs() }
-            val fileA = File(churchA, "copie-auto-20261105.json").apply { writeText("A") }
-            File(churchB, "copie-auto-20261106.json").writeText("B")
+            val fileA = File(churchA, "copie-auto-20261105-120000_test.zip").apply { writeText("A") }
+            File(churchA, ".copie-auto-20261106_test.zip.tmp").writeText("partial")
+            File(churchB, "copie-auto-20261106-120000_test.zip").writeText("B")
 
             assertEquals(fileA.canonicalFile, BackupService.latestAutoFile(context, "church-a")?.canonicalFile)
             assertNull(BackupService.latestAutoFile(context, "church-c"))

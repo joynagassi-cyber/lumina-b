@@ -20,9 +20,15 @@ object CurrencyFormatter {
         decimalSeparator = ','
     }
 
-    private val standardFormat = DecimalFormat("#,##0", symbols)
-    private val preciseFormat = DecimalFormat("#,##0.00", symbols)
-    private val compactDecimalFormat = DecimalFormat("#,##0.#", symbols)
+    private fun threadLocalFormat(pattern: String) = object : ThreadLocal<DecimalFormat>() {
+        override fun initialValue(): DecimalFormat = DecimalFormat(pattern, symbols)
+    }
+
+    // DecimalFormat is mutable and not thread-safe; UI state, exports and reports can
+    // format amounts concurrently on different dispatchers.
+    private val standardFormat = threadLocalFormat("#,##0")
+    private val preciseFormat = threadLocalFormat("#,##0.00")
+    private val compactDecimalFormat = threadLocalFormat("#,##0.#")
 
     fun format(
         amount: Long,
@@ -40,20 +46,20 @@ object CurrencyFormatter {
 
         val formattedNumber = when (mode) {
             AmountDisplayMode.DISCRET -> "••••••"
-            AmountDisplayMode.STANDARD -> standardFormat.format(absAmount)
-            AmountDisplayMode.COMPTABLE -> preciseFormat.format(absAmount.toDouble())
+            AmountDisplayMode.STANDARD -> standardFormat.get().format(absAmount)
+            AmountDisplayMode.COMPTABLE -> preciseFormat.get().format(absAmount.toDouble())
             AmountDisplayMode.COMPACT -> {
                 when {
                     absAmount >= 1_000_000_000L -> {
-                        compactDecimalFormat.format(absAmount / 1_000_000_000.0) + " Md"
+                        compactDecimalFormat.get().format(absAmount / 1_000_000_000.0) + " Md"
                     }
                     absAmount >= 1_000_000L -> {
-                        compactDecimalFormat.format(absAmount / 1_000_000.0) + " M"
+                        compactDecimalFormat.get().format(absAmount / 1_000_000.0) + " M"
                     }
                     absAmount >= 10_000L -> {
-                        compactDecimalFormat.format(absAmount / 1_000.0) + " k"
+                        compactDecimalFormat.get().format(absAmount / 1_000.0) + " k"
                     }
-                    else -> standardFormat.format(absAmount)
+                    else -> standardFormat.get().format(absAmount)
                 }
             }
         }
