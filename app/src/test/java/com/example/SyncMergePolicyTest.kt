@@ -1,6 +1,7 @@
 package com.example
 
 import com.example.data.TransactionEntity
+import com.example.data.TransactionType
 import com.example.sync.SyncMergePolicy
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -12,7 +13,9 @@ class SyncMergePolicyTest {
         val local = TransactionEntity(
             uid = "transaction-stable",
             title = "Dépense",
+            type = TransactionType.EXPENSE,
             amountCents = 100,
+            category = "Frais",
             updatedAt = 100
         )
         val newerButDifferent = local.copy(title = "Dépense modifiée", updatedAt = 500)
