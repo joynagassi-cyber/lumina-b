@@ -38,6 +38,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -359,6 +361,15 @@ fun GroupedCard(
     testTag: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val isGlass = MaterialTheme.colorScheme.background.alpha == 0f
+    val glassRim = Brush.linearGradient(
+        colors = listOf(
+            Color.White.copy(alpha = 0.72f),
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+            Color.White.copy(alpha = 0.15f),
+            Color.White.copy(alpha = 0.54f)
+        )
+    )
     Column(modifier = modifier.fillMaxWidth()) {
         if (title != null) {
             Text(
@@ -373,11 +384,26 @@ fun GroupedCard(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(
-                    width = LuminaTokens.BorderWidthThin,
-                    color = MaterialTheme.colorScheme.outline,
-                    shape = LuminaTokens.ShapeCard
-                ).then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
+                .then(
+                    if (isGlass) Modifier.shadow(7.dp, LuminaTokens.ShapeCard)
+                    else Modifier
+                )
+                .then(
+                    if (isGlass) {
+                        Modifier.border(
+                            width = LuminaTokens.BorderWidthThin,
+                            brush = glassRim,
+                            shape = LuminaTokens.ShapeCard
+                        )
+                    } else {
+                        Modifier.border(
+                            width = LuminaTokens.BorderWidthThin,
+                            color = MaterialTheme.colorScheme.outline,
+                            shape = LuminaTokens.ShapeCard
+                        )
+                    }
+                )
+                .then(if (testTag != null) Modifier.testTag(testTag) else Modifier),
             shape = LuminaTokens.ShapeCard,
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = LuminaTokens.CardElevationNone)

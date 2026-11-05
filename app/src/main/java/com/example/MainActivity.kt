@@ -439,35 +439,48 @@ fun LuminaApp(
                             shape = RoundedCornerShape(10.dp),
                             color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                ThemeMode.values().forEach { mode ->
-                                    val isSelected = uiState.themeMode == mode
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(
-                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                                            )
-                                            .clickable { viewModel.setThemeMode(mode) }
-                                            .padding(vertical = 6.dp),
-                                        contentAlignment = Alignment.Center
+                                listOf(
+                                    listOf(ThemeMode.SYSTEM, ThemeMode.LIGHT, ThemeMode.DARK),
+                                    listOf(ThemeMode.GLASS_LIGHT, ThemeMode.GLASS_DARK)
+                                ).forEach { rowModes ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Text(
-                                            text = when (mode) {
+                                        rowModes.forEach { mode ->
+                                            val isSelected = uiState.themeMode == mode
+                                            val label = when (mode) {
                                                 ThemeMode.SYSTEM -> "Auto"
                                                 ThemeMode.LIGHT -> "Clair"
                                                 ThemeMode.DARK -> "OLED"
-                                            },
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                                ThemeMode.GLASS_LIGHT -> "Glass clair"
+                                                ThemeMode.GLASS_DARK -> "Glass sombre"
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(
+                                                        if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                                    )
+                                                    .clickable { viewModel.setThemeMode(mode) }
+                                                    .padding(vertical = 6.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = label,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -742,17 +755,22 @@ fun LuminaApp(
                             )
                         }
 
-                        // Bascule rapide Thème Clair / OLED
+                        // Bascule clair/sombre ; conserve le style Glass lorsqu'il est actif.
                         IconButton(
                             onClick = {
-                                val nextMode = if (uiState.themeMode == ThemeMode.DARK) ThemeMode.LIGHT else ThemeMode.DARK
+                                val nextMode = when (uiState.themeMode) {
+                                    ThemeMode.DARK -> ThemeMode.LIGHT
+                                    ThemeMode.GLASS_LIGHT -> ThemeMode.GLASS_DARK
+                                    ThemeMode.GLASS_DARK -> ThemeMode.GLASS_LIGHT
+                                    ThemeMode.SYSTEM, ThemeMode.LIGHT -> ThemeMode.DARK
+                                }
                                 viewModel.setThemeMode(nextMode)
                             },
                             modifier = Modifier.testTag("quick_theme_toggle_button")
                         ) {
                             Icon(
-                                imageVector = if (uiState.themeMode == ThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
-                                contentDescription = "Basculer thème",
+                                imageVector = if (uiState.themeMode == ThemeMode.DARK || uiState.themeMode == ThemeMode.GLASS_DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = "Basculer le mode clair ou sombre",
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }

@@ -1,5 +1,19 @@
 # Lumina — journal des versions
 
+## v1.8.0-rc.3 — identité multicolore et thème Glass
+
+### Apparence
+- Ajoute les modes **Glass clair** et **Glass sombre**, indépendants des thèmes Système, Clair épuré et Sombre OLED.
+- Applique des surfaces translucides, dégradés d'ambiance, liserés lumineux, reflets discrets et ombres teintées dans les composants partagés.
+- Le verre dépoli est simulé avec des dégradés et des surfaces alpha : le flou d'arrière-plan natif n'est pas utilisé afin de garder un rendu cohérent sur Android 24 et supérieur.
+
+### Identité Lumina
+- Nouveau symbole multicolore cyan, turquoise, bleu, indigo, violet et champagne.
+- L'illustration garde une zone de sécurité transparente équilibrée et s'adapte aux tailles des logos dans l'application.
+
+### Compatibilité
+- Le mode Glass choisi est conservé dans le profil et pris en charge par les invitations d'église.
+
 ## v1.6.0 — projets, fonds affectés et sauvegarde du dossier
 
 ### Projets et fonds affectés
