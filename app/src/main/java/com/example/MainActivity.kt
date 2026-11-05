@@ -13,6 +13,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -771,33 +773,62 @@ fun LuminaApp(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 )
-                if (!uiState.isDemoMode) cloudProgress?.takeIf { it.isRunning }?.let { progress ->
-                    Column(
+                if (!uiState.isDemoMode) cloudProgress?.let { progress ->
+                    val animatedProgress by animateFloatAsState(
+                        targetValue = progress.percent / 100f,
+                        animationSpec = tween(durationMillis = 450),
+                        label = "cloud-backup-progress"
+                    )
+                    Surface(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.primaryContainer)
-                            .padding(horizontal = 14.dp, vertical = 9.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .testTag("cloud_backup_progress"),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        tonalElevation = 1.dp,
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outlineVariant
+                        )
                     ) {
-                        Text(
-                            "Sauvegarde cloud en cours — ${progress.percent}%",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        LinearProgressIndicator(
-                            progress = { progress.percent / 100f },
-                            modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f)
-                        )
-                        Text(
-                            progress.message,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                            verticalArrangement = Arrangement.spacedBy(9.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (progress.isRunning) "Sauvegarde cloud en cours" else "Sauvegarde terminée",
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "${progress.percent}%",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { animatedProgress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(9.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                            )
+                            Text(
+                                text = if (progress.isRunning) progress.message else "La copie a été confirmée dans le cloud.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
                 }
@@ -1134,7 +1165,6 @@ fun LuminaApp(
                                 }
                             }
                         },
-                        cloudProgress = cloudProgress,
                         cloudBackupStatus = cloudBackupStatus,
                         lastAutoBackupLabel = if (uiState.isDemoMode) "" else lastAutoBackupLabel
                     )

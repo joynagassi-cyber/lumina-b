@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -56,6 +57,14 @@ import androidx.compose.ui.unit.sp
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.FinancialUiState
+import com.example.ui.theme.ExpenseRed
+import com.example.ui.theme.ExpenseRedLight
+import com.example.ui.theme.ExpenseBgDark
+import com.example.ui.theme.ExpenseBgLight
+import com.example.ui.theme.IncomeGreen
+import com.example.ui.theme.IncomeGreenLight
+import com.example.ui.theme.IncomeBgDark
+import com.example.ui.theme.IncomeBgLight
 import com.example.ui.isTransactionLocked
 import com.example.ui.PeriodFilter
 import com.example.ui.SortMode
@@ -213,17 +222,17 @@ fun TimelineScreen(
                                             label = { Text("Tout", fontSize = 11.sp) },
                                             shape = LuminaTokens.ShapePill
                                         )
-                                        FilterChip(
+                                        TimelineTypeFilterChip(
+                                            type = TransactionType.INCOME,
                                             selected = uiState.selectedTypeFilter == TransactionType.INCOME,
-                                            onClick = { onTypeFilterSelected(TransactionType.INCOME) },
-                                            label = { Text("Entrées", fontSize = 11.sp) },
-                                            shape = LuminaTokens.ShapePill
+                                            label = "Entrées",
+                                            onClick = { onTypeFilterSelected(TransactionType.INCOME) }
                                         )
-                                        FilterChip(
+                                        TimelineTypeFilterChip(
+                                            type = TransactionType.EXPENSE,
                                             selected = uiState.selectedTypeFilter == TransactionType.EXPENSE,
-                                            onClick = { onTypeFilterSelected(TransactionType.EXPENSE) },
-                                            label = { Text("Sorties", fontSize = 11.sp) },
-                                            shape = LuminaTokens.ShapePill
+                                            label = "Sorties",
+                                            onClick = { onTypeFilterSelected(TransactionType.EXPENSE) }
                                         )
                                     }
 
@@ -746,4 +755,49 @@ private fun FloatingFilterCard(
             content()
         }
     }
+}
+
+
+@Composable
+private fun TimelineTypeFilterChip(
+    type: TransactionType,
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit
+) {
+    val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val semanticColor = when (type) {
+        TransactionType.INCOME -> if (darkSurface) IncomeGreenLight else IncomeGreen
+        TransactionType.EXPENSE -> if (darkSurface) ExpenseRedLight else ExpenseRed
+    }
+    val selectedSurface = when (type) {
+        TransactionType.INCOME -> if (darkSurface) IncomeBgDark else IncomeBgLight
+        TransactionType.EXPENSE -> if (darkSurface) ExpenseBgDark else ExpenseBgLight
+    }
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label, fontSize = 11.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium) },
+        leadingIcon = {
+            Icon(
+                imageVector = if (type == TransactionType.INCOME) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp)
+            )
+        },
+        shape = LuminaTokens.ShapePill,
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = selectedSurface,
+            selectedLabelColor = semanticColor,
+            selectedLeadingIconColor = semanticColor
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            borderColor = MaterialTheme.colorScheme.outlineVariant,
+            selectedBorderColor = semanticColor,
+            borderWidth = 1.dp,
+            selectedBorderWidth = 2.dp
+        )
+    )
 }

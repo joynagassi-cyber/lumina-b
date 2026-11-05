@@ -1,6 +1,7 @@
 package com.example.cloud
 
 import android.content.Context
+import android.os.SystemClock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -8,9 +9,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.ConcurrentHashMap
 
 /** Serialize cloud upload/restore against local wipe operations for each church database. */
@@ -30,33 +33,97 @@ object CloudBackupLocks {
 
 /** Per-local-workspace cloud link and optimistic concurrency checkpoint. */
 object CloudBackupLocalStore {
-    data class BackupProgress(val isRunning: Boolean, val percent: Int, val message: String)
+    data class BackupProgress(
+        val isRunning: Boolean,
+        val percent: Int,
+        val message: String,
+        val operationId: Long = 0L,
+        val startedAtElapsedMillis: Long = 0L,
+        val isSuccessful: Boolean? = null
+    )
 
     private val progressState = MutableStateFlow<Map<String, BackupProgress>>(emptyMap())
     private val progressScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val progressLock = Any()
+    private val nextProgressId = AtomicLong(0L)
+    private const val MIN_PROGRESS_VISIBLE_MILLIS = 1_800L
+    private const val COMPLETION_VISIBLE_MILLIS = 1_200L
 
     fun progressFlow(workspaceId: String): Flow<BackupProgress?> =
         progressState.map { it[workspaceId] }
 
-    fun setProgress(workspaceId: String, percent: Int, message: String) {
-        progressState.value = progressState.value + (
-            workspaceId to BackupProgress(true, percent.coerceIn(0, 100), message.take(160))
+    fun beginProgress(workspaceId: String, message: String) {
+        val now = SystemClock.elapsedRealtime()
+        val progress = BackupProgress(
+            isRunning = true,
+            percent = 2,
+            message = message.take(160),
+            operationId = nextProgressId.incrementAndGet(),
+            startedAtElapsedMillis = now
         )
+        synchronized(progressLock) {
+            progressState.update { it + (workspaceId to progress) }
+        }
+    }
+
+    fun setProgress(workspaceId: String, percent: Int, message: String) {
+        synchronized(progressLock) {
+            val current = progressState.value[workspaceId]
+            val active = current?.takeIf { it.isRunning }
+            val progress = if (active == null) {
+                BackupProgress(
+                    isRunning = true,
+                    percent = percent.coerceIn(0, 100),
+                    message = message.take(160),
+                    operationId = nextProgressId.incrementAndGet(),
+                    startedAtElapsedMillis = SystemClock.elapsedRealtime()
+                )
+            } else {
+                active.copy(percent = percent.coerceIn(0, 100), message = message.take(160))
+            }
+            progressState.update { it + (workspaceId to progress) }
+        }
     }
 
     fun finishProgress(workspaceId: String, message: String) {
-        val completed = BackupProgress(false, 100, message.take(160))
-        progressState.value = progressState.value + (workspaceId to completed)
+        val running = synchronized(progressLock) { progressState.value[workspaceId] }
+            ?: return
+        val operationId = running.operationId
+        val waitBeforeCompletion = (MIN_PROGRESS_VISIBLE_MILLIS -
+            (SystemClock.elapsedRealtime() - running.startedAtElapsedMillis)).coerceAtLeast(0L)
         progressScope.launch {
-            delay(3_500)
-            if (progressState.value[workspaceId] == completed) {
-                progressState.value = progressState.value - workspaceId
+            delay(waitBeforeCompletion)
+            val completed = synchronized(progressLock) {
+                val current = progressState.value[workspaceId]
+                if (current?.operationId != operationId) {
+                    null
+                } else {
+                    BackupProgress(
+                        isRunning = false,
+                        percent = 100,
+                        message = message.take(160),
+                        operationId = operationId,
+                        startedAtElapsedMillis = running.startedAtElapsedMillis,
+                        isSuccessful = true
+                    ).also { done ->
+                        progressState.update { it + (workspaceId to done) }
+                    }
+                }
+            } ?: return@launch
+
+            delay(COMPLETION_VISIBLE_MILLIS)
+            synchronized(progressLock) {
+                if (progressState.value[workspaceId]?.operationId == completed.operationId) {
+                    progressState.update { it - workspaceId }
+                }
             }
         }
     }
 
     fun clearProgress(workspaceId: String) {
-        progressState.value = progressState.value - workspaceId
+        synchronized(progressLock) {
+            progressState.update { it - workspaceId }
+        }
     }
 
     data class Link(val churchId: String, val generation: Long, val enabled: Boolean)

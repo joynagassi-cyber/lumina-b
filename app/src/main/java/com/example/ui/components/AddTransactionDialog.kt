@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
@@ -53,7 +56,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,10 +70,17 @@ import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.theme.ExpenseRed
+import com.example.ui.theme.ExpenseRedLight
+import com.example.ui.theme.ExpenseBgDark
+import com.example.ui.theme.ExpenseBgLight
 import com.example.ui.theme.IncomeGreen
+import com.example.ui.theme.IncomeGreenLight
+import com.example.ui.theme.IncomeBgDark
+import com.example.ui.theme.IncomeBgLight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -101,6 +113,9 @@ fun AddTransactionDialog(
 ) {
     var selectedType by remember { mutableStateOf(initial?.type ?: TransactionType.EXPENSE) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val categoryMenuMaxHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.42f)
+        .coerceAtMost(320.dp)
+        .coerceAtLeast(140.dp)
     var receiptPath by remember { mutableStateOf(initial?.receiptPhotoUri ?: "") }
     val receiptPicker = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
@@ -196,92 +211,37 @@ fun AddTransactionDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Sélecteur Type (Entrée / Sortie) avec couleurs sémantiques accessibles (Vert / Rouge)
+                // Sélecteur type avec une sélection contrastée, explicitement visible en thème clair.
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(12.dp)),
-                    horizontalArrangement = Arrangement.SpaceEvenly
+                        .height(58.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline), RoundedCornerShape(14.dp))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    val isExpense = selectedType == TransactionType.EXPENSE
-                    val isIncome = selectedType == TransactionType.INCOME
-
-                    // Option Sortie (Dépense) en rouge sémantique accessible
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .padding(4.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isExpense) ExpenseRed.copy(alpha = 0.16f) else Color.Transparent
-                            )
-                            .then(
-                                if (isExpense) Modifier.border(BorderStroke(1.5.dp, ExpenseRed), RoundedCornerShape(8.dp)) else Modifier
-                            )
-                            .clickable {
-                                selectedType = TransactionType.EXPENSE
-                                isCustomCategorySelected = false
-                            }
-                            .testTag("type_expense_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowDownward,
-                                contentDescription = null,
-                                tint = if (isExpense) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Sortie (-)",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isExpense) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    TransactionTypeOption(
+                        type = TransactionType.EXPENSE,
+                        selected = selectedType == TransactionType.EXPENSE,
+                        label = "Sortie (-)",
+                        modifier = Modifier.weight(1f).testTag("type_expense_button"),
+                        onClick = {
+                            selectedType = TransactionType.EXPENSE
+                            isCustomCategorySelected = false
                         }
-                    }
-
-                    // Option Entrée (Revenu) en vert sémantique accessible
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp)
-                            .padding(4.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isIncome) IncomeGreen.copy(alpha = 0.16f) else Color.Transparent
-                            )
-                            .then(
-                                if (isIncome) Modifier.border(BorderStroke(1.5.dp, IncomeGreen), RoundedCornerShape(8.dp)) else Modifier
-                            )
-                            .clickable {
-                                selectedType = TransactionType.INCOME
-                                isCustomCategorySelected = false
-                            }
-                            .testTag("type_income_button"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowUpward,
-                                contentDescription = null,
-                                tint = if (isIncome) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Entrée (+)",
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isIncome) IncomeGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    )
+                    TransactionTypeOption(
+                        type = TransactionType.INCOME,
+                        selected = selectedType == TransactionType.INCOME,
+                        label = "Entrée (+)",
+                        modifier = Modifier.weight(1f).testTag("type_income_button"),
+                        onClick = {
+                            selectedType = TransactionType.INCOME
+                            isCustomCategorySelected = false
                         }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -374,7 +334,8 @@ fun AddTransactionDialog(
                         }
                         DropdownMenu(
                             expanded = projectMenuExpanded,
-                            onDismissRequest = { projectMenuExpanded = false }
+                            onDismissRequest = { projectMenuExpanded = false },
+                            modifier = Modifier.heightIn(max = categoryMenuMaxHeight)
                         ) {
                             DropdownMenuItem(
                                 text = { Text("Aucun dossier affecté") },
@@ -503,7 +464,8 @@ fun AddTransactionDialog(
                     }
                     DropdownMenu(
                         expanded = categoryMenuExpanded,
-                        onDismissRequest = { categoryMenuExpanded = false }
+                        onDismissRequest = { categoryMenuExpanded = false },
+                        modifier = Modifier.heightIn(max = categoryMenuMaxHeight)
                     ) {
                         filteredCategories.forEach { cat ->
                             DropdownMenuItem(
@@ -707,6 +669,69 @@ fun AddTransactionDialog(
                     )
                 }
             }
+        }
+    }
+}
+
+
+@Composable
+private fun TransactionTypeOption(
+    type: TransactionType,
+    selected: Boolean,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val semanticColor = when (type) {
+        TransactionType.EXPENSE -> if (darkSurface) ExpenseRedLight else ExpenseRed
+        TransactionType.INCOME -> if (darkSurface) IncomeGreenLight else IncomeGreen
+    }
+    val selectedSurface = when (type) {
+        TransactionType.EXPENSE -> if (darkSurface) ExpenseBgDark else ExpenseBgLight
+        TransactionType.INCOME -> if (darkSurface) IncomeBgDark else IncomeBgLight
+    }
+    val shape = RoundedCornerShape(11.dp)
+
+    Row(
+        modifier = modifier
+            .fillMaxHeight()
+            .clip(shape)
+            .background(if (selected) selectedSurface else Color.Transparent)
+            .border(
+                BorderStroke(
+                    width = if (selected) 2.5.dp else 1.dp,
+                    color = if (selected) semanticColor else MaterialTheme.colorScheme.outlineVariant
+                ),
+                shape
+            )
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = if (type == TransactionType.EXPENSE) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+            contentDescription = null,
+            tint = if (selected) semanticColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = label,
+            maxLines = 1,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.SemiBold,
+            color = if (selected) semanticColor else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (selected) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Type sélectionné",
+                tint = semanticColor,
+                modifier = Modifier.size(17.dp)
+            )
         }
     }
 }

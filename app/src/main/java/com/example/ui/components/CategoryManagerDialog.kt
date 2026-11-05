@@ -1,6 +1,7 @@
 package com.example.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -18,9 +21,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
@@ -28,7 +35,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,8 +51,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -54,7 +64,81 @@ import androidx.compose.ui.window.DialogProperties
 import com.example.data.CategoryEntity
 import com.example.data.TransactionType
 import com.example.ui.theme.ExpenseRed
+import com.example.ui.theme.ExpenseRedLight
+import com.example.ui.theme.ExpenseBgDark
+import com.example.ui.theme.ExpenseBgLight
 import com.example.ui.theme.IncomeGreen
+import com.example.ui.theme.IncomeGreenLight
+import com.example.ui.theme.IncomeBgDark
+import com.example.ui.theme.IncomeBgLight
+
+@Composable
+private fun CategoryTypeTab(
+    type: TransactionType,
+    selected: Boolean,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val darkSurface = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val semanticColor = when (type) {
+        TransactionType.EXPENSE -> if (darkSurface) ExpenseRedLight else ExpenseRed
+        TransactionType.INCOME -> if (darkSurface) IncomeGreenLight else IncomeGreen
+    }
+    val selectedSurface = when (type) {
+        TransactionType.EXPENSE -> if (darkSurface) ExpenseBgDark else ExpenseBgLight
+        TransactionType.INCOME -> if (darkSurface) IncomeBgDark else IncomeBgLight
+    }
+    val shape = RoundedCornerShape(12.dp)
+
+    Row(
+        modifier = modifier
+            .heightIn(min = 52.dp)
+            .clip(shape)
+            .background(if (selected) selectedSurface else MaterialTheme.colorScheme.surfaceVariant)
+            .border(
+                BorderStroke(
+                    width = if (selected) 2.5.dp else 1.dp,
+                    color = if (selected) semanticColor else MaterialTheme.colorScheme.outline
+                ),
+                shape
+            )
+            .selectable(
+                selected = selected,
+                role = Role.Tab,
+                onClick = onClick
+            )
+            .semantics { this.selected = selected }
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = if (type == TransactionType.EXPENSE) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward,
+            contentDescription = null,
+            tint = if (selected) semanticColor else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+        Spacer(modifier = Modifier.width(5.dp))
+        Text(
+            text = label,
+            modifier = Modifier.weight(1f, fill = false),
+            maxLines = 2,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium,
+            color = if (selected) semanticColor else MaterialTheme.colorScheme.onSurface
+        )
+        if (selected) {
+            Spacer(modifier = Modifier.width(4.dp))
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Sélectionné",
+                tint = semanticColor,
+                modifier = Modifier.size(17.dp)
+            )
+        }
+    }
+}
 
 private val PresetColors = listOf(
     "#0F766E", // Teal Lumina
@@ -103,13 +187,16 @@ fun CategoryManagerDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.94f)
-                .heightIn(max = 700.dp),
+                .fillMaxHeight(0.9f)
+                .heightIn(max = 700.dp)
+                .testTag("category_manager_dialog"),
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp
         ) {
             Column(
                 modifier = Modifier
+                    .fillMaxSize()
                     .padding(20.dp)
             ) {
                 // En-tête
@@ -146,24 +233,30 @@ fun CategoryManagerDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Sélecteur Dépenses / Entrées
+                // Sélecteur Dépenses / Entrées : contraste renforcé, notamment en thème clair.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    FilterChip(
+                    CategoryTypeTab(
+                        type = TransactionType.EXPENSE,
                         selected = selectedTabType == TransactionType.EXPENSE,
-                        onClick = { selectedTabType = TransactionType.EXPENSE },
-                        label = { Text("Sorties / Dépenses") },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
+                        label = "Sorties / Dépenses",
+                        modifier = Modifier.weight(1f).testTag("category_tab_expense"),
+                        onClick = {
+                            selectedTabType = TransactionType.EXPENSE
+                            if (isCreatingNew) formType = TransactionType.EXPENSE
+                        }
                     )
-                    FilterChip(
+                    CategoryTypeTab(
+                        type = TransactionType.INCOME,
                         selected = selectedTabType == TransactionType.INCOME,
-                        onClick = { selectedTabType = TransactionType.INCOME },
-                        label = { Text("Entrées / Revenus") },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.weight(1f)
+                        label = "Entrées / Revenus",
+                        modifier = Modifier.weight(1f).testTag("category_tab_income"),
+                        onClick = {
+                            selectedTabType = TransactionType.INCOME
+                            if (isCreatingNew) formType = TransactionType.INCOME
+                        }
                     )
                 }
 
@@ -212,6 +305,40 @@ fun CategoryManagerDialog(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "Type de catégorie",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                CategoryTypeTab(
+                                    type = TransactionType.EXPENSE,
+                                    selected = formType == TransactionType.EXPENSE,
+                                    label = "Sortie / Dépense",
+                                    modifier = Modifier.weight(1f).testTag("category_form_expense"),
+                                    onClick = {
+                                        formType = TransactionType.EXPENSE
+                                        selectedTabType = TransactionType.EXPENSE
+                                    }
+                                )
+                                CategoryTypeTab(
+                                    type = TransactionType.INCOME,
+                                    selected = formType == TransactionType.INCOME,
+                                    label = "Entrée / Revenu",
+                                    modifier = Modifier.weight(1f).testTag("category_form_income"),
+                                    onClick = {
+                                        formType = TransactionType.INCOME
+                                        selectedTabType = TransactionType.INCOME
+                                    }
+                                )
+                            }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
@@ -299,10 +426,11 @@ fun CategoryManagerDialog(
                                             onUpdateCategory(
                                                 editingCategory!!.id,
                                                 formName,
-                                                editingCategory!!.type,
+                                                formType,
                                                 formColor,
                                                 editingCategory!!.isDefault
                                             )
+                                            selectedTabType = formType
                                             editingCategory = null
                                         }
                                     },
@@ -322,9 +450,22 @@ fun CategoryManagerDialog(
                 val filteredCategories = categories.filter { it.type == selectedTabType }
 
                 LazyColumn(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .testTag("category_list"),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    if (filteredCategories.isEmpty()) {
+                        item(key = "empty-category-list") {
+                            Text(
+                                text = if (selectedTabType == TransactionType.INCOME) "Aucune catégorie d'entrée pour le moment." else "Aucune catégorie de sortie pour le moment.",
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
                     items(filteredCategories, key = { it.id }) { category ->
                         val catColor = parseHexColor(category.colorHex)
                         Card(
@@ -354,6 +495,9 @@ fun CategoryManagerDialog(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Text(
                                         text = category.name,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        maxLines = 2,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.onSurface

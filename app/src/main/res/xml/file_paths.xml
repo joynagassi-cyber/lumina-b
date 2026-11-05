@@ -3,5 +3,6 @@
     <cache-path name="shared_reports" path="reports/" />
     <files-path name="shared_exports" path="exports/" />
     <cache-path name="sync_exchange" path="echanges/" />
+    <cache-path name="church_invitations" path="invitations/" />
     <cache-path name="backups" path="sauvegardes/" />
 </paths>
