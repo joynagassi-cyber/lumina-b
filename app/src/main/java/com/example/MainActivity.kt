@@ -13,7 +13,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -31,6 +30,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.border
@@ -87,7 +88,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -103,6 +103,7 @@ import com.example.ui.FinancialUiState
 import com.example.ui.FinancialViewModel
 import com.example.ui.FinancialViewModelFactory
 import com.example.ui.designsystem.LuminaBranding
+import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.CategoryManagerDialog
 import com.example.ui.screens.BudgetScreen
@@ -121,6 +122,7 @@ import com.example.ui.screens.TimelineScreen
 import com.example.ui.screens.WorkspacePickerDialog
 import com.example.ui.theme.LuminaTheme
 import com.example.ui.theme.ThemeMode
+import com.example.ui.theme.parseHexColor
 import com.example.util.AmountDisplayMode
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -358,6 +360,7 @@ fun LuminaApp(
     if (uiState.currentUser == null) {
         LoginScreen(
             churchName = uiState.profile.churchName,
+            brandBackgroundColor = parseHexColor(uiState.profile.accentColorHex),
             users = uiState.users,
             onLogin = { id, pin -> viewModel.login(id, pin) },
             onCreateFirstUser = { name, role, pin -> viewModel.createFirstUser(name, role, pin) },
@@ -377,285 +380,294 @@ fun LuminaApp(
                     .width(300.dp)
                     .testTag("hamburger_drawer_sheet")
             ) {
-                // Header du tiroir
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(
-                            painter = painterResource(id = R.drawable.lumina_brand_icon),
-                            contentDescription = "Icône Lumina",
-                            modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Lumina",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Dossier : ${uiState.profile.displayName}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(18.dp))
-
-                    // Sélecteur rapide de thème dans le menu hamburger
-                    Surface(
-                        shape = RoundedCornerShape(10.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant
+                Column(modifier = Modifier.fillMaxSize()) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
+                            .testTag("drawer_scroll_content")
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                    // Header du tiroir
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            LuminaBrandMark(
+                                modifier = Modifier.size(42.dp),
+                                backgroundColor = parseHexColor(uiState.profile.accentColorHex)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Lumina",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Dossier : ${uiState.profile.displayName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
+                        // Sélecteur rapide de thème dans le menu hamburger
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant
                         ) {
-                            ThemeMode.values().forEach { mode ->
-                                val isSelected = uiState.themeMode == mode
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(
-                                            if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                ThemeMode.values().forEach { mode ->
+                                    val isSelected = uiState.themeMode == mode
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                                            )
+                                            .clickable { viewModel.setThemeMode(mode) }
+                                            .padding(vertical = 6.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = when (mode) {
+                                                ThemeMode.SYSTEM -> "Auto"
+                                                ThemeMode.LIGHT -> "Clair"
+                                                ThemeMode.DARK -> "OLED"
+                                            },
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                         )
-                                        .clickable { viewModel.setThemeMode(mode) }
-                                        .padding(vertical = 6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = when (mode) {
-                                            ThemeMode.SYSTEM -> "Auto"
-                                            ThemeMode.LIGHT -> "Clair"
-                                            ThemeMode.DARK -> "OLED"
-                                        },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
 
-                Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                if (!uiState.isDemoMode) {
+                    if (!uiState.isDemoMode) {
+                        NavigationDrawerItem(
+                            label = { Text("Dossiers d'église") },
+                            icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
+                            selected = false,
+                            onClick = {
+                                showWorkspacePicker = true
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                .testTag("open_workspace_picker_drawer")
+                        )
+
+                    }
+
+                    if (!uiState.isDemoMode) {
+                        NavigationDrawerItem(
+                            label = { Text("Explorer la démo (essais temporaires)") },
+                            icon = { Icon(Icons.Default.Visibility, contentDescription = null) },
+                            selected = false,
+                            onClick = {
+                                viewModel.startDemoMode(context)
+                                currentScreen = AppScreen.DASHBOARD
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                .testTag("start_read_only_demo_drawer")
+                        )
+                    }
+                    if (uiState.isDemoMode) {
+                        NavigationDrawerItem(
+                            label = { Text("Quitter la démo et revenir à mon profil") },
+                            icon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) },
+                            selected = false,
+                            onClick = {
+                                viewModel.exitDemoMode(context)
+                                currentScreen = AppScreen.DASHBOARD
+                                scope.launch { drawerState.close() }
+                            },
+                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                .testTag("exit_read_only_demo")
+                        )
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                    }
+
+                    // Éléments de navigation du tiroir
                     NavigationDrawerItem(
-                        label = { Text("Dossiers d'église") },
+                        label = { Text("Tableau de bord", fontWeight = FontWeight.SemiBold) },
                         icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
-                        selected = false,
+                        selected = currentScreen == AppScreen.DASHBOARD,
                         onClick = {
-                            showWorkspacePicker = true
-                            scope.launch { drawerState.close() }
-                        },
-                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                            .testTag("open_workspace_picker_drawer")
-                    )
-
-                }
-
-                if (!uiState.isDemoMode) {
-                    NavigationDrawerItem(
-                        label = { Text("Explorer la démo (essais temporaires)") },
-                        icon = { Icon(Icons.Default.Visibility, contentDescription = null) },
-                        selected = false,
-                        onClick = {
-                            viewModel.startDemoMode(context)
                             currentScreen = AppScreen.DASHBOARD
                             scope.launch { drawerState.close() }
                         },
-                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                            .testTag("start_read_only_demo_drawer")
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_dashboard")
                     )
-                }
-                if (uiState.isDemoMode) {
+
                     NavigationDrawerItem(
-                        label = { Text("Quitter la démo et revenir à mon profil") },
-                        icon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) },
-                        selected = false,
+                        label = { Text("Système de Caisses", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Payments, contentDescription = null) },
+                        selected = currentScreen == AppScreen.CAISSES,
                         onClick = {
-                            viewModel.exitDemoMode(context)
-                            currentScreen = AppScreen.DASHBOARD
+                            currentScreen = AppScreen.CAISSES
                             scope.launch { drawerState.close() }
                         },
-                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                            .testTag("exit_read_only_demo")
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_caisses")
                     )
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
-                }
 
-                // Éléments de navigation du tiroir
-                NavigationDrawerItem(
-                    label = { Text("Tableau de bord", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
-                    selected = currentScreen == AppScreen.DASHBOARD,
-                    onClick = {
-                        currentScreen = AppScreen.DASHBOARD
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_dashboard")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Système de Caisses", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Payments, contentDescription = null) },
-                    selected = currentScreen == AppScreen.CAISSES,
-                    onClick = {
-                        currentScreen = AppScreen.CAISSES
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_caisses")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Budgets & Suivi", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.PieChart, contentDescription = null) },
-                    selected = currentScreen == AppScreen.BUDGETS,
-                    onClick = {
-                        currentScreen = AppScreen.BUDGETS
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_budgets")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Historique des Opérations", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.History, contentDescription = null) },
-                    selected = currentScreen == AppScreen.TIMELINE,
-                    onClick = {
-                        currentScreen = AppScreen.TIMELINE
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_timeline")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Registre des Membres", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Groups, contentDescription = null) },
-                    selected = currentScreen == AppScreen.MEMBERS,
-                    onClick = {
-                        currentScreen = AppScreen.MEMBERS
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_members")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Projets & fonds affectés", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Savings, contentDescription = null) },
-                    selected = currentScreen == AppScreen.PROJECTS,
-                    onClick = {
-                        currentScreen = AppScreen.PROJECTS
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_projects")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Rapports & Exports", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Share, contentDescription = null) },
-                    selected = currentScreen == AppScreen.EXPORT,
-                    onClick = {
-                        currentScreen = AppScreen.EXPORT
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_export")
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                NavigationDrawerItem(
-                    label = { Text("Gestion des Catégories", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Category, contentDescription = null) },
-                    selected = false,
-                    onClick = {
-                        showCategoryManager = true
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_categories")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Équipe & partage", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Groups, contentDescription = null) },
-                    selected = currentScreen == AppScreen.TEAM,
-                    onClick = {
-                        currentScreen = AppScreen.TEAM
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_team")
-                )
-
-                NavigationDrawerItem(
-                    label = { Text("Paramètres", fontWeight = FontWeight.SemiBold) },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    selected = currentScreen == AppScreen.SETTINGS,
-                    onClick = {
-                        currentScreen = AppScreen.SETTINGS
-                        scope.launch { drawerState.close() }
-                    },
-                    modifier = Modifier
-                        .padding(NavigationDrawerItemDefaults.ItemPadding)
-                        .testTag("drawer_item_settings")
-                )
-
-                Spacer(modifier = Modifier.weight(1f))
-
-                // Footer de version dans le tiroir
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp)
-                ) {
-                    Text(
-                        text = "Lumina • ${LuminaBranding.SLOGAN}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    NavigationDrawerItem(
+                        label = { Text("Budgets & Suivi", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.PieChart, contentDescription = null) },
+                        selected = currentScreen == AppScreen.BUDGETS,
+                        onClick = {
+                            currentScreen = AppScreen.BUDGETS
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_budgets")
                     )
-                    Text(
-                        text = "Données enregistrées sur votre appareil",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+
+                    NavigationDrawerItem(
+                        label = { Text("Historique des Opérations", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.History, contentDescription = null) },
+                        selected = currentScreen == AppScreen.TIMELINE,
+                        onClick = {
+                            currentScreen = AppScreen.TIMELINE
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_timeline")
+                    )
+
+                    NavigationDrawerItem(
+                        label = { Text("Registre des Membres", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Groups, contentDescription = null) },
+                        selected = currentScreen == AppScreen.MEMBERS,
+                        onClick = {
+                            currentScreen = AppScreen.MEMBERS
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_members")
+                    )
+
+                    NavigationDrawerItem(
+                        label = { Text("Projets & fonds affectés", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Savings, contentDescription = null) },
+                        selected = currentScreen == AppScreen.PROJECTS,
+                        onClick = {
+                            currentScreen = AppScreen.PROJECTS
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_projects")
+                    )
+
+                    NavigationDrawerItem(
+                        label = { Text("Rapports & Exports", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        selected = currentScreen == AppScreen.EXPORT,
+                        onClick = {
+                            currentScreen = AppScreen.EXPORT
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_export")
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    NavigationDrawerItem(
+                        label = { Text("Gestion des Catégories", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Category, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            showCategoryManager = true
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_categories")
+                    )
+
+                    NavigationDrawerItem(
+                        label = { Text("Équipe & partage", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Groups, contentDescription = null) },
+                        selected = currentScreen == AppScreen.TEAM,
+                        onClick = {
+                            currentScreen = AppScreen.TEAM
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_team")
+                    )
+
+                    }
+
+                    // Paramètres reste accessible même lorsque la liste est longue.
+                    NavigationDrawerItem(
+                        label = { Text("Paramètres", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        selected = currentScreen == AppScreen.SETTINGS,
+                        onClick = {
+                            currentScreen = AppScreen.SETTINGS
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_settings")
+                    )
+
+                    // Footer de version dans le tiroir
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(20.dp)
+                    ) {
+                        Text(
+                            text = "Lumina • ${LuminaBranding.SLOGAN}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                        Text(
+                            text = "Données enregistrées sur votre appareil",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         fontSize = 10.sp
                     )
+                    }
                 }
             }
         }

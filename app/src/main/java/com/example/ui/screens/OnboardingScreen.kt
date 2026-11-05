@@ -48,9 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.res.painterResource
-import com.example.R
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -63,6 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import com.example.data.ChurchProfileEntity
 import com.example.ui.designsystem.LuminaBranding
+import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.theme.AccentPalettes
 import com.example.ui.theme.parseHexColor
 import com.example.util.ImageStore
@@ -152,7 +152,7 @@ fun OnboardingScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 when (step) {
-                    0 -> WelcomeStep()
+                    0 -> WelcomeStep(accentColor = accent)
                     1 -> IdentityStep(
                         churchName = churchName,
                         onChurchNameChange = { churchName = it; errorMessage = null },
@@ -348,13 +348,11 @@ private fun OnboardingInfoStep(
 }
 
 @Composable
-private fun WelcomeStep() {
+private fun WelcomeStep(accentColor: Color) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Image(
-            painter = painterResource(id = R.drawable.lumina_brand_icon),
-            contentDescription = "Icône Lumina",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp))
+        LuminaBrandMark(
+            modifier = Modifier.size(72.dp),
+            backgroundColor = accentColor
         )
         Spacer(modifier = Modifier.height(20.dp))
         Text(

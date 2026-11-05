@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,9 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import com.example.R
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -50,6 +48,7 @@ import com.example.data.UserEntity
 import com.example.data.UserRole
 import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.designsystem.LuminaBranding
+import com.example.ui.designsystem.LuminaBrandMark
 
 /**
  * Écran d'ouverture de session locale.
@@ -60,6 +59,7 @@ import com.example.ui.designsystem.LuminaBranding
 @Composable
 fun LoginScreen(
     churchName: String,
+    brandBackgroundColor: Color = MaterialTheme.colorScheme.primary,
     users: List<UserEntity>,
     onLogin: (Long, String) -> Unit,
     onCreateFirstUser: (String, UserRole, String) -> Unit,
@@ -90,10 +90,9 @@ fun LoginScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Image(
-                    painter = painterResource(id = R.drawable.lumina_brand_icon),
-                    contentDescription = "Icône Lumina",
-                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
+                LuminaBrandMark(
+                    modifier = Modifier.size(56.dp),
+                    backgroundColor = brandBackgroundColor
                 )
                 Text(
                     text = churchName.ifBlank { "Mon église" },

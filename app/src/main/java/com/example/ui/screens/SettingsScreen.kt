@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,8 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import com.example.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,11 +67,13 @@ import com.example.ui.designsystem.HeroCard
 import com.example.ui.designsystem.IconTile
 import com.example.ui.designsystem.ListRow
 import com.example.ui.designsystem.LuminaCard
+import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.designsystem.LuminaCardElevation
 import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.designsystem.StatTrio
 import com.example.ui.theme.ThemeMode
 import com.example.ui.theme.AccentPalettes
+import com.example.ui.theme.parseHexColor
 import com.example.util.AmountDisplayMode
 import com.example.util.CurrencyFormatter
 import androidx.compose.ui.graphics.Color
@@ -162,10 +161,9 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.lumina_brand_icon),
-                        contentDescription = "Icône Lumina",
-                        modifier = Modifier.size(46.dp).clip(LuminaTokens.ShapeTile)
+                    LuminaBrandMark(
+                        modifier = Modifier.size(46.dp),
+                        backgroundColor = parseHexColor(uiState.profile.accentColorHex)
                     )
 
                     Spacer(modifier = Modifier.width(LuminaTokens.SpacingDefault))
