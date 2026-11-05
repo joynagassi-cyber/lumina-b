@@ -64,6 +64,7 @@ import com.example.data.CategoryEntity
 import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
+import com.example.util.FinancialAmount
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import androidx.compose.foundation.BorderStroke
@@ -648,9 +649,9 @@ fun AddTransactionDialog(
                 // Bouton Enregistrer
                 Button(
                     onClick = {
-                        val parsedAmount = amountText.toDoubleOrNull()
-                        if (parsedAmount == null || parsedAmount <= 0.0) {
-                            errorMessage = "Veuillez saisir un montant valide en FCFA supérieur à 0."
+                        val amountLong = FinancialAmount.parseTransactionAmount(amountText)
+                        if (amountLong == null) {
+                            errorMessage = "Veuillez saisir un montant valide en FCFA, supérieur à 0 et inférieur à la limite autorisée."
                             return@Button
                         }
                         if (title.isBlank()) {
@@ -658,7 +659,6 @@ fun AddTransactionDialog(
                             return@Button
                         }
 
-                        val amountLong = Math.round(parsedAmount)
                         val finalCategory = if (isCustomCategorySelected && customCategory.isNotBlank()) {
                             customCategory.trim()
                         } else {

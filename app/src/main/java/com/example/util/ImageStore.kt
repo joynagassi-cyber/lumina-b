@@ -7,6 +7,7 @@ import android.net.Uri
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.UUID
 
 /**
  * Gestion des images locales : logo de l'église (stocké en Base64 dans le
@@ -40,9 +41,15 @@ object ImageStore {
             require(workspaceId == "default" || workspaceId.matches(Regex("[A-Za-z0-9_-]+")))
             val root = File(context.filesDir, "justificatifs")
             val directory = (if (workspaceId == "default") root else File(root, workspaceId)).apply { mkdirs() }
-            val file = File(directory, "justif_${System.currentTimeMillis()}.jpg")
-            file.outputStream().use { stream ->
+            val file = File(directory, "justif_${System.currentTimeMillis()}_${UUID.randomUUID()}.jpg")
+            val temp = File(directory, ".${file.name}.tmp")
+            val compressed = temp.outputStream().use { stream ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 82, stream)
+            }
+            if (!compressed || !temp.isFile || temp.length() == 0L || !temp.renameTo(file)) {
+                temp.delete()
+                file.delete()
+                return null
             }
             file.absolutePath
         } catch (e: Exception) {

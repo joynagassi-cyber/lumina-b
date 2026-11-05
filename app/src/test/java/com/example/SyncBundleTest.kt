@@ -93,6 +93,16 @@ class SyncBundleTest {
         SyncBundleCodec.decode(legacy)
     }
 
+    @Test(expected = SyncBundleCodec.UnsupportedFormat::class)
+    fun version_nulle_de_bundle_est_refusee() {
+        val malformed = JSONObject().apply {
+            put("format", SyncBundleCodec.FORMAT)
+            put("version", 0)
+        }.toString().toByteArray(Charsets.UTF_8)
+
+        SyncBundleCodec.decode(malformed)
+    }
+
     @Test
     fun ancien_bundle_sans_identifiant_reste_lisible() {
         val legacy = JSONObject().apply {

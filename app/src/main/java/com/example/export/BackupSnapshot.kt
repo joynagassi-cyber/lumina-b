@@ -9,6 +9,7 @@ import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.data.UserEntity
+import com.example.util.FinancialAmount
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -33,6 +34,9 @@ data class BackupSnapshot(
 ) {
     val transactionCount: Int get() = transactions.size
     val memberCount: Int get() = members.size
+
+    /** Les comptes sont enrôlés localement et ne doivent jamais venir d'un fichier partagé. */
+    fun withoutLocalUsers(): BackupSnapshot = copy(users = emptyList())
 }
 
 /**
@@ -48,6 +52,9 @@ object BackupCodec {
     const val VERSION = 1
 
     fun encode(snapshot: BackupSnapshot): String {
+        require(snapshot.transactions.all { FinancialAmount.isValidTransactionAmount(it.amountCents) }) {
+            "Le dossier contient un montant d'opération invalide ou hors limite."
+        }
         val root = JSONObject()
         root.put("format", FORMAT)
         root.put("version", VERSION)
@@ -255,8 +262,9 @@ object BackupCodec {
         }
         val format = root.optString("format", "")
         require(format == FORMAT) { "Fichier illisible : ce n'est pas une sauvegarde Lumina." }
-        require(root.optInt("version", 1) <= VERSION) {
-            "Sauvegarde créée par une version plus récente de l'application."
+        val version = root.optInt("version", 1)
+        require(version in 1..VERSION) {
+            "Version de sauvegarde invalide ou créée par une version plus récente de l'application."
         }
 
         val profile = root.optJSONObject("profile")?.let { p ->
@@ -283,7 +291,7 @@ object BackupCodec {
             )
         }
 
-        return BackupSnapshot(
+        val snapshot = BackupSnapshot(
             createdAt = root.optLong("createdAt", System.currentTimeMillis()),
             churchName = root.optString("churchName", profile?.churchName ?: ""),
             profile = profile,
@@ -395,6 +403,10 @@ object BackupCodec {
                 )
             }
         )
+        require(snapshot.transactions.all { FinancialAmount.isValidTransactionAmount(it.amountCents) }) {
+            "La sauvegarde contient un montant d'opération invalide ou hors limite."
+        }
+        return snapshot
     }
 
     private fun array(root: JSONObject, key: String): List<JSONObject> {

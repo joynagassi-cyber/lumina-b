@@ -12,6 +12,7 @@ import com.example.data.UserEntity
 import com.example.export.BackupCodec
 import com.example.export.BackupCrypto
 import com.example.export.BackupSnapshot
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -123,6 +124,23 @@ class BackupCodecTest {
         assertNotNull(profil)
         assertEquals(1_690_000_000_000L, profil!!.booksClosedUntilMillis)
         assertEquals("#0F766E", profil.accentColorHex)
+    }
+
+    @Test
+    fun restauration_partagee_ne_transporte_jamais_les_comptes_locaux() {
+        val snapshot = dossier()
+        val portable = snapshot.withoutLocalUsers()
+
+        assertTrue(snapshot.users.isNotEmpty())
+        assertTrue(portable.users.isEmpty())
+        assertEquals(snapshot.transactions, portable.transactions)
+        assertEquals(snapshot.profile, portable.profile)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun version_nulle_de_sauvegarde_est_refusee() {
+        val malformed = JSONObject(BackupCodec.encode(dossier())).apply { put("version", 0) }
+        BackupCodec.decode(malformed.toString())
     }
 
     @Test

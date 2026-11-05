@@ -7,6 +7,7 @@ import com.example.data.MemberEntity
 import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
+import com.example.util.FinancialAmount
 import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
@@ -56,6 +57,9 @@ object SyncBundleCodec {
     private const val MAX_TOTAL_RECEIPT_BYTES = 100 * 1024 * 1024
 
     fun encode(bundle: SyncBundle): ByteArray {
+        require(bundle.transactions.all { FinancialAmount.isValidTransactionAmount(it.amountCents) }) {
+            "Le dossier contient un montant d'opération invalide ou hors limite."
+        }
         val root = JSONObject()
         root.put("format", FORMAT)
         root.put("version", VERSION)
@@ -211,8 +215,12 @@ object SyncBundleCodec {
         if (root.optString("format") != FORMAT) {
             throw UnsupportedFormat("Ce fichier n'est pas un échange Lumina")
         }
-        if (root.optInt("version", 0) > VERSION) {
+        val version = root.optInt("version", 1)
+        if (version > VERSION) {
             throw UnsupportedFormat("Fichier produit par une version plus récente de l'application")
+        }
+        if (version < 1) {
+            throw UnsupportedFormat("Version d'échange Lumina invalide")
         }
 
         val registers = root.optJSONArray("registers").toList { obj ->
@@ -322,6 +330,10 @@ object SyncBundleCodec {
                 isCancelled = obj.optBoolean("isCancelled", false),
                 projectId = 0L
             )
+        }
+
+        require(transactions.all { FinancialAmount.isValidTransactionAmount(it.amountCents) }) {
+            "Le fichier d'échange contient un montant d'opération invalide ou hors limite"
         }
 
         val receiptFilesByTransactionUid = linkedMapOf<String, ByteArray>()

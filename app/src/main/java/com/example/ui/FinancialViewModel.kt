@@ -16,6 +16,7 @@ import com.example.data.TransactionRepository
 import com.example.data.SyncContributorEntity
 import com.example.data.TransactionType
 import com.example.data.UserEntity
+import com.example.data.UserPermissionPolicy
 import com.example.data.UserRole
 import com.example.sync.SyncConflictItem
 import com.example.sync.SyncManager
@@ -25,6 +26,7 @@ import com.example.export.ReportExporter
 import com.example.ui.theme.ThemeMode
 import com.example.util.AmountDisplayMode
 import com.example.util.CurrencyFormatter
+import com.example.util.FinancialAmount
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -653,9 +655,9 @@ class FinancialViewModel(
             firstUserIsInvitee = firstUserIsInvitee,
             projects = allProjects.filter { !it.isDeleted },
             projectSummaries = projectSummaries,
-            canWrite = currentUser?.roleValue?.canWrite ?: true,
-            canDelete = currentUser?.roleValue?.canDelete ?: true,
-            canManageUsers = currentUser?.roleValue?.canManageUsers ?: true,
+            canWrite = currentUser?.roleValue?.canWrite ?: false,
+            canDelete = currentUser?.roleValue?.canDelete ?: false,
+            canManageUsers = currentUser?.roleValue?.canManageUsers ?: false,
             isDemoMode = demoMode,
             workspaceId = repository.workspaceId,
             isLoading = false,
@@ -724,23 +726,23 @@ class FinancialViewModel(
     }
 
     /** Contrôle des droits avant toute modification des données. */
-    private suspend fun ensurePermission(needDelete: Boolean = false): Boolean {
+    private suspend fun ensurePermission(
+        needDelete: Boolean = false,
+        needManageUsers: Boolean = false,
+        allowUnauthenticated: Boolean = false
+    ): Boolean {
         if (_demoMode.value) {
             _eventFlow.emit("Mode démonstration : action en lecture seule, aucune donnée n'a été modifiée")
             return false
         }
-        val role = _currentUser.value?.roleValue ?: return true
-        return when {
-            needDelete && !role.canDelete -> {
-                _eventFlow.emit("Votre profil ne permet pas de supprimer une écriture")
-                false
-            }
-            !role.canWrite -> {
-                _eventFlow.emit("Votre profil est en lecture seule")
-                false
-            }
-            else -> true
-        }
+        val denial = UserPermissionPolicy.denialMessage(
+            user = _currentUser.value,
+            needDelete = needDelete,
+            needManageUsers = needManageUsers,
+            allowUnauthenticated = allowUnauthenticated
+        ) ?: return true
+        _eventFlow.emit(denial)
+        return false
     }
 
     // ==========================================
@@ -761,8 +763,8 @@ class FinancialViewModel(
     fun login(userId: Long, pin: String) {
         viewModelScope.launch {
             val user = repository.getUserById(userId)
-            if (user == null) {
-                _eventFlow.emit("Utilisateur introuvable")
+            if (user == null || !user.isActive || user.isDeleted) {
+                _eventFlow.emit("Utilisateur introuvable ou désactivé")
                 return@launch
             }
             val ok = when {
@@ -788,14 +790,24 @@ class FinancialViewModel(
                 return@launch
             }
             val salt = PinHasher.newSalt()
-            val id = repository.saveUser(
-                UserEntity(
-                    displayName = name,
-                    role = role.name,
-                    pinSalt = salt,
-                    pinHash = PinHasher.hash(pin, salt)
-                )
-            )
+            val id = try {
+                repository.inDatabaseTransaction {
+                    check(repository.getUsersCount() == 0) {
+                        "Des accès existent déjà. Connectez-vous pour créer un autre utilisateur."
+                    }
+                    repository.saveUser(
+                        UserEntity(
+                            displayName = name,
+                            role = role.name,
+                            pinSalt = salt,
+                            pinHash = PinHasher.hash(pin, salt)
+                        )
+                    )
+                }
+            } catch (error: Exception) {
+                _eventFlow.emit(error.localizedMessage ?: "Impossible de créer le premier accès")
+                return@launch
+            }
             _currentUser.value = repository.getUserById(id)
             _firstUserIsInvitee.value = false
             appContext?.getSharedPreferences("lumina_onboarding", Context.MODE_PRIVATE)
@@ -832,7 +844,7 @@ class FinancialViewModel(
 
     fun addUser(displayName: String, role: UserRole, pin: String) {
         viewModelScope.launch {
-            if (!ensurePermission()) return@launch
+            if (!ensurePermission(needManageUsers = true)) return@launch
             val name = displayName.trim()
             if (name.isBlank()) {
                 _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
@@ -853,7 +865,7 @@ class FinancialViewModel(
 
     fun updateUser(user: UserEntity, displayName: String, role: UserRole, newPin: String) {
         viewModelScope.launch {
-            if (!ensurePermission()) return@launch
+            if (!ensurePermission(needManageUsers = true)) return@launch
             val name = displayName.trim()
             if (name.isBlank()) {
                 _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
@@ -881,7 +893,7 @@ class FinancialViewModel(
 
     fun deleteUser(user: UserEntity) {
         viewModelScope.launch {
-            if (!ensurePermission(needDelete = true)) return@launch
+            if (!ensurePermission(needManageUsers = true)) return@launch
             if (repository.getUsersCount() <= 1) {
                 _eventFlow.emit("Il doit rester au moins un utilisateur")
                 return@launch
@@ -901,6 +913,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Le partage du dossier réel est désactivé en mode démonstration")
                 return@launch
             }
+            if (!ensurePermission()) return@launch
             try {
                 if (passphrase.length < 6) {
                     _eventFlow.emit("La phrase de passe doit contenir au moins 6 caractères")
@@ -1118,7 +1131,7 @@ class FinancialViewModel(
         onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
     ) {
         viewModelScope.launch {
-            if (!ensurePermission()) {
+            if (!ensurePermission(allowUnauthenticated = true)) {
                 onResult(Result.failure(IllegalStateException("Import désactivé en mode démonstration")))
                 return@launch
             }
@@ -1237,7 +1250,7 @@ class FinancialViewModel(
         accentColorHex: String
     ) {
         viewModelScope.launch {
-            if (!ensurePermission()) return@launch
+            if (!ensurePermission(allowUnauthenticated = true)) return@launch
             val current = repository.getProfile() ?: ChurchProfileEntity()
             repository.saveProfile(
                 current.copy(
@@ -1273,6 +1286,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Le profil exemple est en lecture seule")
                 return@launch
             }
+            if (!ensurePermission()) return@launch
             val current = repository.getProfile() ?: ChurchProfileEntity()
             repository.saveProfile(transform(current).copy(updatedAt = System.currentTimeMillis()))
         }
@@ -1301,7 +1315,7 @@ class FinancialViewModel(
 
     fun completeOnboardingFromScreen(profile: ChurchProfileEntity) {
         viewModelScope.launch {
-            if (!ensurePermission()) return@launch
+            if (!ensurePermission(allowUnauthenticated = true)) return@launch
             repository.saveProfile(
                 profile.copy(
                     churchName = profile.churchName.trim(),
@@ -1485,8 +1499,8 @@ class FinancialViewModel(
                 _eventFlow.emit("La caisse de départ et la caisse d'arrivée doivent être différentes")
                 return@launch
             }
-            if (amountCents <= 0L) {
-                _eventFlow.emit("Le montant du virement doit être supérieur à 0")
+            if (!FinancialAmount.isValidTransactionAmount(amountCents)) {
+                _eventFlow.emit("Le montant du virement dépasse la limite autorisée")
                 return@launch
             }
 
@@ -1821,8 +1835,8 @@ class FinancialViewModel(
                 return@launch
             }
             if (!ensurePeriodOpen(existing.timestamp) || !ensurePeriodOpen(timestamp)) return@launch
-            if (amountCents <= 0L || title.isBlank()) {
-                _eventFlow.emit("Intitulé et montant sont obligatoires")
+            if (!FinancialAmount.isValidTransactionAmount(amountCents) || title.isBlank()) {
+                _eventFlow.emit("Indiquez un intitulé et un montant valide dans la limite autorisée")
                 return@launch
             }
             repository.update(
@@ -1860,8 +1874,8 @@ class FinancialViewModel(
         viewModelScope.launch {
             if (_demoMode.value) {
                 val cleanTitle = title.trim()
-                if (cleanTitle.isBlank() || amountCents <= 0L) {
-                    _eventFlow.emit("Pour l'essai, indiquez un intitulé et un montant supérieur à zéro")
+                if (cleanTitle.isBlank() || !FinancialAmount.isValidTransactionAmount(amountCents)) {
+                    _eventFlow.emit("Pour l'essai, indiquez un intitulé et un montant valide dans la limite autorisée")
                     return@launch
                 }
                 val temporaryEntity = TransactionEntity(
@@ -1885,8 +1899,9 @@ class FinancialViewModel(
                 _eventFlow.emit("Écriture d'essai ajoutée temporairement. Elle sera effacée en quittant la démonstration.")
                 return@launch
             }
-            if (!uiState.value.canWrite) {
-                _eventFlow.emit("Votre profil est en lecture seule")
+            if (!ensurePermission()) return@launch
+            if (title.isBlank() || !FinancialAmount.isValidTransactionAmount(amountCents)) {
+                _eventFlow.emit("Indiquez un intitulé et un montant valide dans la limite autorisée")
                 return@launch
             }
             if (!ensurePeriodOpen(timestamp)) return@launch

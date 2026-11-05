@@ -16,9 +16,9 @@ import java.util.UUID
  * Échange de données entre appareils, sans réseau ni compte.
  *
  * Le bundle chiffré transporte les données structurées et justificatifs. Les
- * révisions sont rapprochées par identité stable; une version strictement plus
- * récente gagne. Une égalité divergente est mise en attente dans un journal
- * persistant, puis arbitrable depuis l'écran d'équipe. Les comptes et PIN restent locaux.
+ * révisions sont rapprochées par identité stable. Toute différence de contenu
+ * est mise en attente dans un journal persistant, sans écrasement automatique;
+ * elle est arbitrable depuis l'écran d'équipe. Les comptes et PIN restent locaux.
  */
 object SyncManager {
 
@@ -73,7 +73,7 @@ object SyncManager {
             if (updatedProjects > 0) append(", $updatedProjects projet(s) mis à jour")
             if (conflicts > 0) append(" — $conflicts conflit(s) à examiner; la copie locale est conservée jusqu'à arbitrage")
             if (!auditSaved) append(" — ATTENTION : le journal des conflits n'a pas pu être enregistré")
-            if (ignored > 0) append(" — $ignored élément(s) inchangé(s) ou plus ancien(s)")
+            if (ignored > 0) append(" — $ignored élément(s) identique(s) ou ignoré(s)")
         }
     }
 
@@ -249,11 +249,11 @@ object SyncManager {
                     localIdByRegisterUid[remote.uid] = local.id
                     val key = "register:${remote.uid}"
                     when {
-                        remote.updatedAt > local.updatedAt || key in forcedIncomingKeys -> {
+                        key in forcedIncomingKeys -> {
                             repository.insertRegistersRaw(listOf(remote.copy(id = local.id)))
                             updatedRegisters++
                         }
-                        remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> {
+                        SyncMergePolicy.hasDiverged(local, remote.copy(id = local.id, updatedAt = local.updatedAt)) -> {
                             conflicts++
                             conflictDetails += conflictItem(
                                 key, "Caisse", remote.uid, remote.name,
@@ -283,11 +283,11 @@ object SyncManager {
                     localIdByProjectUid[remote.uid] = local.id
                     val key = "project:${remote.uid}"
                     when {
-                        remote.updatedAt > local.updatedAt || key in forcedIncomingKeys -> {
+                        key in forcedIncomingKeys -> {
                             repository.insertProjectRaw(remote.copy(id = local.id))
                             updatedProjects++
                         }
-                        remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> {
+                        SyncMergePolicy.hasDiverged(local, remote.copy(id = local.id, updatedAt = local.updatedAt)) -> {
                             conflicts++
                             conflictDetails += conflictItem(
                                 key, "Projet", remote.uid, remote.name,
@@ -301,7 +301,7 @@ object SyncManager {
                 }
             }
 
-            // 2. Catégories : les identités stables et horodatages distinguent les edits.
+            // 2. Catégories : toute différence de contenu est présentée comme conflit.
             for (remote in bundle.categories) {
                 if (remote.uid.isBlank()) { ignored++; continue }
                 val local = repository.categoryByUid(remote.uid)
@@ -312,11 +312,11 @@ object SyncManager {
                 } else {
                     val key = "category:${remote.uid}"
                     when {
-                        remote.updatedAt > local.updatedAt || key in forcedIncomingKeys -> {
+                        key in forcedIncomingKeys -> {
                             repository.insertCategoriesRaw(listOf(remote.copy(id = local.id)))
                             updatedCategories++
                         }
-                        remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> {
+                        SyncMergePolicy.hasDiverged(local, remote.copy(id = local.id, updatedAt = local.updatedAt)) -> {
                             conflicts++
                             conflictDetails += conflictItem(
                                 key, "Catégorie", remote.uid, remote.name,
@@ -339,11 +339,11 @@ object SyncManager {
                         repository.insertMembersRaw(listOf(remote.copy(id = 0)))
                         if (!remote.isDeleted) addedMembers++
                     }
-                    remote.updatedAt > local.updatedAt || "member:${remote.uid}" in forcedIncomingKeys -> {
+                    "member:${remote.uid}" in forcedIncomingKeys -> {
                         repository.insertMembersRaw(listOf(remote.copy(id = local.id)))
                         updatedMembers++
                     }
-                    remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> {
+                    SyncMergePolicy.hasDiverged(local, remote.copy(id = local.id, updatedAt = local.updatedAt)) -> {
                         conflicts++
                         conflictDetails += conflictItem(
                             "member:${remote.uid}", "Membre", remote.uid, remote.fullName,
@@ -414,7 +414,7 @@ object SyncManager {
                         )
                         if (!remote.isDeleted) addedTx++
                     }
-                    remote.updatedAt > local.updatedAt || "transaction:${remote.uid}" in forcedIncomingKeys -> {
+                    "transaction:${remote.uid}" in forcedIncomingKeys -> {
                         val receiptPath = if (remoteHasReceipt) {
                             val path = com.example.export.BackupService.writeReceiptFilesForSync(
                                 context,
@@ -437,12 +437,13 @@ object SyncManager {
                         )
                         updatedTx++
                     }
-                    remote.updatedAt == local.updatedAt -> {
+                    else -> {
                         val normalized = remote.copy(
                             id = local.id,
                             cashRegisterId = localRegisterId,
                             projectId = if (projectUid == null) local.projectId else mappedProjectId,
-                            receiptPhotoUri = local.receiptPhotoUri
+                            receiptPhotoUri = local.receiptPhotoUri,
+                            updatedAt = local.updatedAt
                         )
                         val receiptMatches = if (remoteHasReceipt) {
                             com.example.export.BackupService.collectReceiptFilesForSync(
@@ -451,7 +452,7 @@ object SyncManager {
                                 listOf(local)
                             )[remote.uid]?.contentEquals(bundle.receiptFilesByTransactionUid.getValue(remote.uid)) == true
                         } else !local.hasReceipt
-                        if (normalized != local || !receiptMatches) {
+                        if (SyncMergePolicy.hasDiverged(local, normalized) || !receiptMatches) {
                             conflicts++
                             conflictDetails += conflictItem(
                                 "transaction:${remote.uid}", "Écriture", remote.uid, remote.title,
@@ -461,7 +462,6 @@ object SyncManager {
                             )
                         } else ignored++
                     }
-                    else -> ignored++
                 }
             }
             }

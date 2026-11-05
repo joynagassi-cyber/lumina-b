@@ -140,7 +140,9 @@ object BackupService {
         password: String
     ): BackupSnapshot = withContext(Dispatchers.IO) {
         val payload = decodePayload(readLimited(context, uri), password)
-        restorePayload(context, repository, payload)
+        // Même les anciennes archives peuvent contenir des comptes/PIN. Ils ne
+        // sont jamais restaurés depuis un fichier partageable : ils restent locaux.
+        restorePayload(context, repository, payload.copy(snapshot = payload.snapshot.withoutLocalUsers()))
     }
 
     /**

@@ -4,4 +4,5 @@
     <files-path name="shared_exports" path="exports/" />
     <cache-path name="sync_exchange" path="echanges/" />
     <cache-path name="backups" path="sauvegardes/" />
+    <cache-path name="church_invitations" path="invitations/" />
 </paths>
