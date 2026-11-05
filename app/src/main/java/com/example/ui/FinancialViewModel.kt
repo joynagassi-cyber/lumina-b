@@ -19,6 +19,7 @@ import com.example.data.UserRole
 import com.example.sync.SyncConflictItem
 import com.example.sync.SyncManager
 import com.example.util.PinHasher
+import com.example.export.ChurchInvitationService
 import com.example.export.ReportExporter
 import com.example.ui.theme.ThemeMode
 import com.example.util.AmountDisplayMode
@@ -906,6 +907,25 @@ class FinancialViewModel(
         }
     }
 
+    fun createChurchInvitation(
+        context: Context,
+        passphrase: String,
+        onReady: (java.io.File) -> Unit
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    ChurchInvitationService.create(context.applicationContext, repository, passphrase)
+                }
+                onReady(file)
+                _eventFlow.emit("Invitation légère prête. Elle ne contient aucune donnée financière.")
+            } catch (e: Exception) {
+                _eventFlow.emit("Création de l'invitation impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
     fun importSyncFile(context: Context, uri: android.net.Uri, passphrase: String) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
@@ -1073,7 +1093,7 @@ class FinancialViewModel(
                 return@launch
             }
             val result = runCatching {
-                com.example.export.BackupService.importForNewMember(
+                ChurchInvitationService.importForNewMember(
                     context.applicationContext,
                     repository,
                     uri,

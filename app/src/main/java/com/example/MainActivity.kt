@@ -971,6 +971,7 @@ fun LuminaApp(
                         onUpdateUser = { user, name, role, pin -> viewModel.updateUser(user, name, role, pin) },
                         onDeleteUser = { user -> viewModel.deleteUser(user) },
                         onExport = { ctx, phrase, onReady -> viewModel.exportSyncFile(ctx, phrase, onReady) },
+                        onCreateInvitation = { ctx, phrase, onReady -> viewModel.createChurchInvitation(ctx, phrase, onReady) },
                         onImport = { ctx, uri, phrase -> viewModel.importSyncFile(ctx, uri, phrase) },
                         onRefreshConflicts = { ctx -> viewModel.refreshSyncConflicts(ctx) },
                         onResolveConflict = { ctx, conflict, useImported, phrase ->
@@ -981,7 +982,7 @@ fun LuminaApp(
                                 ctx,
                                 file,
                                 "application/octet-stream",
-                                "Échange de données Lumina"
+                                if (file.name.endsWith(".lumina-invite")) "Invitation légère Lumina" else "Échange de données Lumina"
                             )
                         },
                         onLogout = { viewModel.logout(context) }

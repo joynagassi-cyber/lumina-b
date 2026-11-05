@@ -341,13 +341,14 @@ fun OnboardingScreen(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
-                            "Le dossier importé crée l'organisation sur cet appareil sans écraser vos autres dossiers. " +
-                                "Vous créerez ensuite votre propre nom et code PIN. Laissez le mot de passe vide si le fichier n'est pas protégé."
+                            "Vous pouvez importer une invitation légère (.lumina-invite) ou une archive Lumina complète. " +
+                                "L'invitation ne contient pas les finances : après avoir créé votre profil et PIN, importez séparément un fichier d'échange si l'église vous en transmet un. " +
+                                "L'archive complète, elle, apporte aussi les données du dossier. Vos accès restent personnels sur cet appareil."
                         )
                         OutlinedTextField(
                             value = joinPassword,
                             onValueChange = { joinPassword = it },
-                            label = { Text("Mot de passe du fichier (facultatif)") },
+                            label = { Text("Phrase de passe (obligatoire pour l'invitation légère)") },
                             singleLine = true,
                             visualTransformation = PasswordVisualTransformation(),
                             enabled = !joining,

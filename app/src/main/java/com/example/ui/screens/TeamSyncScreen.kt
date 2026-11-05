@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -74,6 +75,7 @@ fun TeamSyncScreen(
     onUpdateUser: (UserEntity, String, UserRole, String) -> Unit,
     onDeleteUser: (UserEntity) -> Unit,
     onExport: (Context, String, (java.io.File) -> Unit) -> Unit,
+    onCreateInvitation: (Context, String, (java.io.File) -> Unit) -> Unit,
     onImport: (Context, android.net.Uri, String) -> Unit,
     onRefreshConflicts: (Context) -> Unit,
     onResolveConflict: (Context, SyncConflictItem, Boolean, String) -> Unit,
@@ -329,6 +331,31 @@ fun TeamSyncScreen(
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("church_invitation_card"),
+            shape = LuminaTokens.ShapeSubCard,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Invitation légère pour un nouveau membre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                        "Ce petit fichier contient le nom, l'identité visuelle et l'identifiant de l'église, sans finances, écritures, membres ni comptes/PIN. " +
+                        "Il est chiffré avec la phrase ci-dessus : transmettez-la séparément. La personne l'importe pendant l'accueil, crée son profil et son PIN, puis importe séparément un fichier d'échange si elle doit recevoir les données.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedButton(
+                    onClick = { onCreateInvitation(context, passphrase) { file -> onShareFile(context, file) } },
+                    enabled = uiState.canWrite && passphrase.length >= 6,
+                    modifier = Modifier.fillMaxWidth().testTag("create_church_invitation")
+                ) {
+                    Icon(Icons.Default.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Créer et partager l'invitation")
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
         OutlinedButton(
