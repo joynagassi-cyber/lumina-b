@@ -211,7 +211,8 @@ fun TeamSyncScreen(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = "Un fichier chiffré est produit ici, puis ouvert sur l'autre téléphone. " +
-                "Les écritures sont fusionnées : rien n'est écrasé, les plus récentes gagnent.",
+                "Les ajouts sont rapprochés par identifiant stable. Une version clairement plus récente remplace l'ancienne; " +
+                "en cas de divergence ambiguë, la copie locale est conservée et le conflit est signalé.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -255,8 +256,9 @@ fun TeamSyncScreen(
 
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Seuls l'église, les caisses, les catégories, les écritures et les membres voyagent. " +
-                "Les personnes et leurs codes restent sur chaque appareil.",
+            text = "L'échange inclut l'église, caisses, catégories, budgets, projets, écritures et membres. " +
+                "Les comptes et PIN restent sur chaque appareil. Les reçus ne sont pas transportés par ce fichier : " +
+                "si une écriture en possède, l'import est bloqué; utilisez l'archive Lumina complète (ZIP).",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
