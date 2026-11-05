@@ -21,13 +21,16 @@ class SyncBundleTest {
             churchName = "Église de Kandi",
             churchUid = "eglise-uid-123",
             deviceId = "device-a",
-            author = "Trésorier"
+            author = "Awa Bio",
+            authorRole = "COMPTABLE"
         )
 
         val decoded = SyncBundleCodec.decode(SyncBundleCodec.encode(original))
 
         assertEquals(original.churchUid, decoded.churchUid)
         assertEquals(original.churchName, decoded.churchName)
+        assertEquals(original.author, decoded.author)
+        assertEquals(original.authorRole, decoded.authorRole)
     }
 
     @Test

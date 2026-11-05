@@ -342,7 +342,7 @@ fun OnboardingScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(
                             "Vous pouvez importer une invitation légère (.lumina-invite) ou une archive Lumina complète. " +
-                                "L'invitation ne contient pas les finances : après avoir créé votre profil et PIN, importez séparément un fichier d'échange si l'église vous en transmet un. " +
+                                "L'invitation ne contient pas les finances : après avoir choisi votre rôle et créé votre profil et PIN, importez séparément un fichier d'échange si l'église vous en transmet un. " +
                                 "L'archive complète, elle, apporte aussi les données du dossier. Vos accès restent personnels sur cet appareil."
                         )
                         OutlinedTextField(

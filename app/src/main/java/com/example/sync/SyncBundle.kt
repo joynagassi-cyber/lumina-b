@@ -26,6 +26,7 @@ data class SyncBundle(
     val churchUid: String = "",
     val deviceId: String = "",
     val author: String = "",
+    val authorRole: String = "",
     val exportedAt: Long = System.currentTimeMillis(),
     val registers: List<CashRegisterEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
@@ -62,6 +63,7 @@ object SyncBundleCodec {
         root.put("churchUid", bundle.churchUid)
         root.put("deviceId", bundle.deviceId)
         root.put("author", bundle.author)
+        root.put("authorRole", bundle.authorRole)
         root.put("exportedAt", bundle.exportedAt)
 
         val registers = JSONArray()
@@ -355,6 +357,7 @@ object SyncBundleCodec {
             churchUid = root.optString("churchUid", ""),
             deviceId = root.optString("deviceId"),
             author = root.optString("author"),
+            authorRole = root.optString("authorRole"),
             exportedAt = root.optLong("exportedAt"),
             registers = registers,
             categories = categories,

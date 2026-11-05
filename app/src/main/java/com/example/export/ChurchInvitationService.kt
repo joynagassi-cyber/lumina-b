@@ -83,7 +83,7 @@ object ChurchInvitationService {
             "L'invitation est réservée à un dossier local neuf. Vos données actuelles n'ont pas été modifiées."
         }
         repository.saveProfile(invitation.profile.copy(updatedAt = System.currentTimeMillis()))
-        repository.snapshotAll()
+        repository.snapshotAll().copy(importedAsLightInvitation = true)
     }
 
     private fun readPrefix(context: Context, uri: Uri): ByteArray {

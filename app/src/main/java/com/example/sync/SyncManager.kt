@@ -8,6 +8,7 @@ import com.example.data.ChurchProfileEntity
 import com.example.data.MemberEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionRepository
+import com.example.data.UserRole
 import java.io.File
 import java.util.UUID
 
@@ -26,6 +27,8 @@ object SyncManager {
     data class MergeReport(
         val sourceChurch: String = "",
         val exportedBy: String = "",
+        val exportedByRole: String = "",
+        val sourceDeviceId: String = "",
         val exportedAt: Long = 0L,
         val addedTransactions: Int = 0,
         val updatedTransactions: Int = 0,
@@ -44,6 +47,12 @@ object SyncManager {
         val auditSaved: Boolean = true,
         val ignored: Int = 0
     ) {
+        val exportedByLabel: String
+            get() = exportedBy.trim().let { name ->
+                val roleLabel = runCatching { UserRole.valueOf(exportedByRole).label }.getOrNull()
+                listOf(name, roleLabel).filterNotNull().filter { it.isNotBlank() }.joinToString(" — ")
+            }
+
         val totalChanges: Int
             get() = addedTransactions + updatedTransactions + addedMembers +
                 updatedMembers + addedRegisters + updatedRegisters + addedCategories +
@@ -78,6 +87,7 @@ object SyncManager {
         profile: ChurchProfileEntity,
         passphrase: String,
         authorName: String,
+        authorRole: String,
         directory: File
     ): File {
         val bundle = SyncBundle(
@@ -85,6 +95,7 @@ object SyncManager {
             churchUid = profile.churchUid,
             deviceId = DeviceIdentity.deviceId(context),
             author = authorName,
+            authorRole = authorRole,
             exportedAt = System.currentTimeMillis(),
             registers = repository.registersForSync(),
             categories = repository.categoriesForSync(),
@@ -471,6 +482,8 @@ object SyncManager {
         return MergeReport(
             sourceChurch = bundle.churchName,
             exportedBy = bundle.author,
+            exportedByRole = bundle.authorRole,
+            sourceDeviceId = bundle.deviceId,
             exportedAt = bundle.exportedAt,
             addedTransactions = addedTx,
             updatedTransactions = updatedTx,

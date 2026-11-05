@@ -20,8 +20,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedButton
@@ -63,6 +66,7 @@ fun LoginScreen(
     users: List<UserEntity>,
     onLogin: (Long, String) -> Unit,
     onCreateFirstUser: (String, UserRole, String) -> Unit,
+    isInvitedFirstUser: Boolean = false,
     onStartDemo: () -> Unit = {},
     onChooseWorkspace: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -74,6 +78,8 @@ fun LoginScreen(
     var firstUserFirstName by remember { mutableStateOf("") }
     var firstUserLastName by remember { mutableStateOf("") }
     var firstUserPin by remember { mutableStateOf("") }
+    var firstUserRole by remember { mutableStateOf<UserRole?>(null) }
+    var firstUserRoleMenuExpanded by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -103,7 +109,9 @@ fun LoginScreen(
                 )
             }
             Text(
-                text = if (users.isEmpty()) {
+                text = if (users.isEmpty() && isInvitedFirstUser) {
+                    "Vous rejoignez cette église : indiquez votre nom, choisissez votre rôle et créez votre PIN personnel."
+                } else if (users.isEmpty()) {
                     "Créez votre premier utilisateur : le trésorier administre l'application."
                 } else {
                     "Qui utilise l'application ?"
@@ -138,6 +146,45 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth().testTag("first_user_last_name")
                 )
                 Spacer(modifier = Modifier.height(10.dp))
+                if (isInvitedFirstUser) {
+                    Text("Votre rôle dans l'église", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { firstUserRoleMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth().testTag("first_user_role_selector")
+                        ) {
+                            Text(firstUserRole?.label ?: "Choisir mon rôle", modifier = Modifier.weight(1f))
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Afficher les rôles")
+                        }
+                        DropdownMenu(
+                            expanded = firstUserRoleMenuExpanded,
+                            onDismissRequest = { firstUserRoleMenuExpanded = false }
+                        ) {
+                            UserRole.entries.forEach { candidate ->
+                                DropdownMenuItem(
+                                    text = { Text(candidate.label) },
+                                    onClick = {
+                                        firstUserRole = candidate
+                                        firstUserRoleMenuExpanded = false
+                                    },
+                                    modifier = Modifier.testTag("first_user_role_${candidate.name.lowercase()}")
+                                )
+                            }
+                        }
+                    }
+                    Text(
+                        text = when (firstUserRole) {
+                            UserRole.TRESORIER -> "Administre les utilisateurs et peut supprimer des écritures."
+                            UserRole.COMPTABLE -> "Saisit et modifie les données, sans gérer les utilisateurs ni supprimer."
+                            UserRole.ASSISTANT -> "Saisit des données sans pouvoir supprimer ou gérer les utilisateurs."
+                            UserRole.LECTURE -> "Consulte les données sans les modifier."
+                            null -> "Sélectionnez le rôle qui vous a été confié dans l'église."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
                 OutlinedTextField(
                     value = firstUserPin,
                     onValueChange = { firstUserPin = it.filter { c -> c.isDigit() }.take(6) },
@@ -153,15 +200,24 @@ fun LoginScreen(
                         val personalName = listOf(firstUserFirstName.trim(), firstUserLastName.trim())
                             .filter { it.isNotBlank() }
                             .joinToString(" ")
-                        if (firstUserFirstName.isNotBlank() && firstUserLastName.isNotBlank() && firstUserPin.length >= 4) {
-                            onCreateFirstUser(personalName, UserRole.TRESORIER, firstUserPin)
+                        val role = if (isInvitedFirstUser) firstUserRole else UserRole.TRESORIER
+                        if (firstUserFirstName.isNotBlank() && firstUserLastName.isNotBlank() &&
+                            firstUserPin.length >= 4 && role != null
+                        ) {
+                            onCreateFirstUser(personalName, role, firstUserPin)
                             firstUserPin = ""
                         }
                     },
+                    enabled = firstUserFirstName.isNotBlank() && firstUserLastName.isNotBlank() &&
+                        firstUserPin.length >= 4 && (!isInvitedFirstUser || firstUserRole != null),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.fillMaxWidth().testTag("create_first_user")
                 ) {
-                    Text("Créer mon accès trésorier", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isInvitedFirstUser) "Créer mon accès ${firstUserRole?.label ?: "personnel"}"
+                        else "Créer mon accès trésorier",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             } else {
                 users.forEach { user ->

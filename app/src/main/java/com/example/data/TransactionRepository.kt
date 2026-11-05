@@ -3,6 +3,7 @@ package com.example.data
 import androidx.room.withTransaction
 import com.example.export.BackupSnapshot
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import java.util.UUID
 
 class TransactionRepository(
@@ -15,7 +16,8 @@ class TransactionRepository(
     private val userDao: UserDao,
     private val projectDao: ProjectDao,
     val workspaceId: String = "default",
-    private val database: LuminaDatabase? = null
+    private val database: LuminaDatabase? = null,
+    private val syncContributorDao: SyncContributorDao? = null
 ) {
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
@@ -33,6 +35,30 @@ class TransactionRepository(
     suspend fun deleteUser(id: Long) = userDao.softDelete(id, System.currentTimeMillis())
 
     suspend fun touchUserLogin(id: Long) = userDao.touchLastLogin(id, System.currentTimeMillis())
+
+    // Les contributeurs synchronisés ne sont pas des comptes de connexion : aucun PIN ni droit d'accès local.
+    val syncContributors: Flow<List<SyncContributorEntity>> =
+        syncContributorDao?.observeAll() ?: flowOf(emptyList<SyncContributorEntity>())
+
+    suspend fun recordSyncContributor(displayName: String, role: String, sourceDeviceId: String) {
+        val name = displayName.trim().take(120)
+        if (name.isBlank()) return
+        val safeRole = runCatching { UserRole.valueOf(role).name }.getOrDefault("")
+        val safeDeviceId = sourceDeviceId.take(128)
+        val stableUid = UUID.nameUUIDFromBytes("$safeDeviceId:${name.lowercase()}".toByteArray(Charsets.UTF_8)).toString()
+        val now = System.currentTimeMillis()
+        val previous = syncContributorDao?.getByUid(stableUid)
+        syncContributorDao?.upsert(
+            SyncContributorEntity(
+                uid = stableUid,
+                displayName = name,
+                role = safeRole,
+                sourceDeviceId = safeDeviceId,
+                firstSeenAt = previous?.firstSeenAt ?: now,
+                lastSeenAt = now
+            )
+        )
+    }
     // ==========================================
     // Identité de l'église (profil local)
     // ==========================================

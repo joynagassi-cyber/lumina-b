@@ -3,6 +3,7 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.LuminaDatabase
+import com.example.data.SyncContributorEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,13 @@ class ChurchDatabaseIsolationTest {
 
             assertEquals(1, databaseA.transactionDao().getAllTransactions().first().size)
             assertEquals(0, databaseB.transactionDao().getAllTransactions().first().size)
+
+            databaseA.syncContributorDao().upsert(
+                SyncContributorEntity(uid = "sender-a", displayName = "Awa Bio", role = "COMPTABLE")
+            )
+            assertEquals("COMPTABLE", databaseA.syncContributorDao().getByUid("sender-a")?.role)
+            assertEquals(0, databaseA.userDao().getUsers().size)
+            assertEquals(null, databaseB.syncContributorDao().getByUid("sender-a"))
         } finally {
             LuminaDatabase.closeDatabaseNamed(nameA)
             LuminaDatabase.closeDatabaseNamed(nameB)

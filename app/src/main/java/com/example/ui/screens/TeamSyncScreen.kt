@@ -201,10 +201,58 @@ fun TeamSyncScreen(
             }
         }
 
+        if (uiState.syncContributors.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("sync_contributors"),
+                shape = LuminaTokens.ShapeSubCard,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.35f))
+            ) {
+                Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Contributeurs des échanges", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Les personnes ci-dessous ont partagé des données avec ce dossier. Ce sont des attributions d'échange, pas des comptes locaux ni des PIN.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    uiState.syncContributors.forEach { contributor ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier.size(32.dp).clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    contributor.displayName.trim().split(" ").filter { it.isNotBlank() }
+                                        .take(2).joinToString("") { it.first().uppercase() }.ifBlank { "?" },
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(contributor.displayName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    contributor.role.takeIf { it.isNotBlank() }?.let { contributor.roleValue.label }
+                                        ?: "Rôle non communiqué",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Trésorier : tout gérer.  Assistant : saisir et corriger, sans gérer l'équipe.  " +
-                "Lecture : consulter et exporter uniquement.",
+            text = "Trésorier : tout gérer.  Comptable : saisir et modifier sans supprimer.  " +
+                "Assistant : saisir sans gérer l'équipe.  Lecture : consulter uniquement.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -327,7 +375,8 @@ fun TeamSyncScreen(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = "L'échange chiffré inclut l'église, caisses, catégories, budgets, projets, écritures, membres et justificatifs. " +
-                "Les comptes et PIN restent sur chaque appareil. Si un justificatif local est inaccessible, l'export s'arrête sans créer un fichier incomplet.",
+                "Le nom et le rôle de l'expéditeur accompagnent le fichier et apparaissent comme contributeur à sa réception. " +
+                "Aucun compte local ni PIN n'est exporté. Si un justificatif est inaccessible, l'export s'arrête sans fichier incomplet.",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -342,7 +391,7 @@ fun TeamSyncScreen(
                 Text("Invitation légère pour un nouveau membre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                         "Ce petit fichier contient le nom, l'identité visuelle et l'identifiant de l'église, sans finances, écritures, membres ni comptes/PIN. " +
-                        "Il est chiffré avec la phrase ci-dessus : transmettez-la séparément. La personne l'importe pendant l'accueil, crée son profil et son PIN, puis importe séparément un fichier d'échange si elle doit recevoir les données.",
+                        "Il est chiffré avec la phrase ci-dessus : transmettez-la séparément. La personne l'importe pendant l'accueil, choisit son rôle, crée son profil et son PIN, puis importe séparément un fichier d'échange si elle doit recevoir les données.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 OutlinedButton(

@@ -29,17 +29,21 @@ class ReportExporterTest {
                     type = TransactionType.EXPENSE,
                     amountCents = 100,
                     category = "A; B",
-                    note = "ligne 1\nligne 2"
+                    note = "ligne 1\nligne 2",
+                    updatedBy = "Awa Bio — Comptable"
                 )
             ),
             totalIncomeCents = 0,
             totalExpenseCents = 100,
-            netBalanceCents = -100
+            netBalanceCents = -100,
+            generatedBy = "Awa Bio — Comptable"
         )
         val text = csv.readText(Charsets.UTF_8)
         assertTrue(text.contains("'=HYPERLINK"))
         assertTrue(text.contains("\"A; B\""))
         assertTrue(text.contains("ligne 1 ligne 2"))
+        assertTrue(text.contains("# Établi par: Awa Bio — Comptable"))
+        assertTrue(text.contains("Awa Bio — Comptable"))
         csv.delete()
     }
 
@@ -69,13 +73,15 @@ class ReportExporterTest {
                     category = "Dîmes",
                     timestamp = 1_790_000_000_000L,
                     note = "Don <spécial>",
-                    cashRegisterName = "Caisse principale"
+                    cashRegisterName = "Caisse principale",
+                    updatedBy = "Awa Bio — Comptable"
                 )
             ),
             totalIncomeCents = 12345,
             totalExpenseCents = 0,
             netBalanceCents = 12345,
-            profile = ChurchProfileEntity(churchName = "Église de Kandi")
+            profile = ChurchProfileEntity(churchName = "Église de Kandi"),
+            generatedBy = "Awa Bio — Comptable"
         )
 
         assertTrue(excel.name.endsWith(".xlsx"))
@@ -86,11 +92,13 @@ class ReportExporterTest {
                 .bufferedReader(Charsets.UTF_8).use { it.readText() }
             assertTrue(sheet.contains("Dîme &amp; offrande"))
             assertTrue(sheet.contains("Don &lt;spécial&gt;"))
-            assertTrue(sheet.contains("<c r=\"G4\"><v>12345</v></c>"))
+            assertTrue(sheet.contains("Awa Bio — Comptable"))
+            assertTrue(sheet.contains("<c r=\"G5\"><v>12345</v></c>"))
+            assertTrue(sheet.contains("r=\"K5\""))
             val parser = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }.newDocumentBuilder()
             val document = parser.parse(workbook.getInputStream(workbook.getEntry("xl/worksheets/sheet1.xml")))
             assertEquals("worksheet", document.documentElement.localName)
-            assertEquals(7, document.getElementsByTagNameNS(
+            assertEquals(8, document.getElementsByTagNameNS(
                 "http://schemas.openxmlformats.org/spreadsheetml/2006/main", "row"
             ).length)
         }

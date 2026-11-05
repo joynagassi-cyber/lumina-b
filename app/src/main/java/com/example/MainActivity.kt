@@ -162,12 +162,13 @@ class MainActivity : ComponentActivity() {
             database.userDao(),
             database.projectDao(),
             workspaceId = activeWorkspace.id,
-            database = database
+            database = database,
+            syncContributorDao = database.syncContributorDao()
         )
 
         setContent {
             val viewModel: FinancialViewModel = viewModel(
-                factory = FinancialViewModelFactory(repository)
+                factory = FinancialViewModelFactory(repository, applicationContext)
             )
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
             LaunchedEffect(activeWorkspace.id, uiState.profile.churchName, uiState.profile.onboardingCompleted) {
@@ -368,6 +369,7 @@ fun LuminaApp(
             users = uiState.users,
             onLogin = { id, pin -> viewModel.login(id, pin) },
             onCreateFirstUser = { name, role, pin -> viewModel.createFirstUser(name, role, pin) },
+            isInvitedFirstUser = uiState.firstUserIsInvitee,
             onStartDemo = { viewModel.startDemoMode(context) },
             onChooseWorkspace = { showWorkspacePicker = true }
         )
