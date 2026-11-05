@@ -84,6 +84,7 @@ fun CaissesScreen(
     onDeleteCaisse: (Long) -> Unit,
     onTransferBetweenCaisses: (sourceId: Long, targetId: Long, amountCents: Long, note: String) -> Unit,
     createSignal: Int = 0,
+    onCreateConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showAddCaisseDialog by remember { mutableStateOf(false) }
@@ -115,6 +116,7 @@ fun CaissesScreen(
         if (createSignal > 0) {
             caisseToEdit = null
             showAddCaisseDialog = true
+            onCreateConsumed()
         }
     }
 

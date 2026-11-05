@@ -221,6 +221,10 @@ data class FinancialUiState(
 /** Événement destiné à une notification système locale. */
 data class NotificationEvent(val title: String, val body: String)
 
+/** True quand l'écriture tombe dans la période déjà clôturée, borne incluse. */
+internal fun isTransactionLocked(timestamp: Long, closedUntilMillis: Long): Boolean =
+    closedUntilMillis > 0L && timestamp <= closedUntilMillis
+
 class FinancialViewModel(
     private val repository: TransactionRepository
 ) : ViewModel() {
@@ -1472,8 +1476,11 @@ class FinancialViewModel(
 
     /** Vérifie que la date n'est pas couverte par une clôture de comptes. */
     private suspend fun ensurePeriodOpen(timestamp: Long): Boolean {
-        val closedUntil = uiState.value.profile.booksClosedUntilMillis
-        if (closedUntil > 0L && timestamp <= closedUntil) {
+        // Relecture Room : évite une courte fenêtre où l'UI n'a pas encore reçu
+        // le nouveau cutoff juste après la clôture.
+        val closedUntil = repository.getProfile()?.booksClosedUntilMillis
+            ?: uiState.value.profile.booksClosedUntilMillis
+        if (isTransactionLocked(timestamp, closedUntil)) {
             val label = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.FRANCE)
                 .format(java.util.Date(closedUntil))
             _eventFlow.emit("Comptes clôturés jusqu'au $label : cette période n'est plus modifiable")
@@ -1652,7 +1659,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Opération introuvable")
                 return@launch
             }
-            if (!ensurePeriodOpen(existing.timestamp)) return@launch
+            if (!ensurePeriodOpen(existing.timestamp) || !ensurePeriodOpen(timestamp)) return@launch
             if (amountCents <= 0L || title.isBlank()) {
                 _eventFlow.emit("Intitulé et montant sont obligatoires")
                 return@launch

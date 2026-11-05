@@ -85,6 +85,7 @@ fun BudgetScreen(
     onUpdateCategory: (id: Long, name: String, type: com.example.data.TransactionType, colorHex: String, isDefault: Boolean) -> Unit,
     onDeleteCategory: (com.example.data.CategoryEntity) -> Unit,
     createSignal: Int = 0,
+    onCreateConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showSetBudgetDialog by remember { mutableStateOf(false) }
@@ -113,6 +114,7 @@ fun BudgetScreen(
         if (createSignal > 0) {
             budgetToEdit = null
             showSetBudgetDialog = true
+            onCreateConsumed()
         }
     }
 

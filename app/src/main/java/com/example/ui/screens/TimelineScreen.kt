@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.FinancialUiState
+import com.example.ui.isTransactionLocked
 import com.example.ui.PeriodFilter
 import com.example.ui.SortMode
 import androidx.compose.foundation.layout.heightIn
@@ -427,15 +429,20 @@ fun TimelineScreen(
                 item(key = "header_$dateGroup") {
                     GroupedCard(title = dateGroup) {
                         list.forEachIndexed { index, tx ->
+                            val isClosedByPeriod = isTransactionLocked(
+                                tx.timestamp,
+                                uiState.profile.booksClosedUntilMillis
+                            )
                             TimelineTransactionRow(
                                 transaction = tx,
                                 displayMode = uiState.amountDisplayMode,
                                 timeFormatted = timeFormat.format(Date(tx.timestamp)),
+                                isLocked = isClosedByPeriod,
                                 onOpenClick = {
-                                    if (!tx.isTransfer) onEditTransaction(tx)
+                                    if (!tx.isTransfer && !isClosedByPeriod) onEditTransaction(tx)
                                 },
                                 onDeleteClick = {
-                                    if (!tx.isNeutralised) transactionToDelete = tx
+                                    if (!tx.isNeutralised && !isClosedByPeriod) transactionToDelete = tx
                                 },
                                 showDivider = index < list.size - 1
                             )
@@ -495,6 +502,7 @@ fun TimelineTransactionRow(
     transaction: TransactionEntity,
     displayMode: com.example.util.AmountDisplayMode,
     timeFormatted: String,
+    isLocked: Boolean = false,
     onOpenClick: () -> Unit = {},
     onDeleteClick: () -> Unit,
     showDivider: Boolean
@@ -505,7 +513,7 @@ fun TimelineTransactionRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpenClick() }
+            .clickable(enabled = !isLocked) { onOpenClick() }
             .testTag("timeline_item_${transaction.id}")
             .padding(vertical = 8.dp)
     ) {
@@ -624,18 +632,30 @@ fun TimelineTransactionRow(
                     }
                 )
 
-                IconButton(
-                    onClick = onDeleteClick,
-                    modifier = Modifier
-                        .size(32.dp)
-                        .testTag("delete_button_${transaction.id}")
-                ) {
+                if (isLocked) {
                     Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Supprimer",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Écriture verrouillée par la clôture des comptes",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .padding(start = 8.dp)
+                            .size(18.dp)
+                            .testTag("locked_transaction_${transaction.id}")
                     )
+                } else {
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .testTag("delete_button_${transaction.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Supprimer",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }

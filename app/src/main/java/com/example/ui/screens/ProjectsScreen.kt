@@ -77,6 +77,7 @@ fun ProjectsScreen(
     onAddProject: (String, String, Long, String) -> Unit,
     onUpdateProject: (ProjectEntity, String, String, Long, Boolean, String) -> Unit,
     onDeleteProject: (ProjectEntity) -> Unit,
+    onCreateConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var editing by remember { mutableStateOf<ProjectEntity?>(null) }
@@ -86,7 +87,10 @@ fun ProjectsScreen(
     val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
 
     LaunchedEffect(createSignal) {
-        if (createSignal > 0) creating = true
+        if (createSignal > 0) {
+            creating = true
+            onCreateConsumed()
+        }
     }
 
     if (selectedProject != null) {

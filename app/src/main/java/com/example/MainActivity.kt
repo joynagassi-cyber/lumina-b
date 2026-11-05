@@ -215,8 +215,9 @@ fun LuminaApp(
     var showProfileEditor by remember { mutableStateOf(false) }
     var showChurchProfile by remember { mutableStateOf(false) }
     var showWorkspacePicker by remember { mutableStateOf(false) }
-    // Incrémenté à chaque appui sur le bouton flottant : chaque page ouvre sa propre création
+    // Requête de création à usage unique, ciblée sur l'écran courant.
     var createSignal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var createTarget by remember { mutableStateOf<AppScreen?>(null) }
     var transactionToEdit by remember { mutableStateOf<com.example.data.TransactionEntity?>(null) }
     // Sauvegarde & restauration
     var restorePassword by remember { mutableStateOf("") }
@@ -831,7 +832,10 @@ fun LuminaApp(
                         if (uiState.isDemoMode) {
                             showAddDialog = true
                         } else when (currentScreen) {
-                            AppScreen.CAISSES, AppScreen.BUDGETS, AppScreen.MEMBERS, AppScreen.PROJECTS -> createSignal++
+                            AppScreen.CAISSES, AppScreen.BUDGETS, AppScreen.MEMBERS, AppScreen.PROJECTS -> {
+                                createTarget = currentScreen
+                                createSignal++
+                            }
                             else -> showAddDialog = true
                         }
                     },
@@ -882,7 +886,8 @@ fun LuminaApp(
                         onUpdateCaisse = { id, name, desc, bal, icon, isDef -> viewModel.updateCashRegister(id, name, desc, bal, icon, isDef) },
                         onDeleteCaisse = { id -> viewModel.deleteCashRegister(id) },
                         onTransferBetweenCaisses = { src, tgt, amt, note -> viewModel.transferBetweenCaisses(src, tgt, amt, note) },
-                        createSignal = createSignal
+                        createSignal = if (createTarget == AppScreen.CAISSES) createSignal else 0,
+                        onCreateConsumed = { if (createTarget == AppScreen.CAISSES) createTarget = null }
                     )
                     AppScreen.BUDGETS -> BudgetScreen(
                         uiState = uiState,
@@ -895,26 +900,30 @@ fun LuminaApp(
                         onUpdateCategory = { id, name, type, color, isDefault ->
                             viewModel.updateCategory(id, name, type, color, isDefault)
                         },
-                        onDeleteCategory = { cat -> viewModel.deleteCategory(cat) }
+                        onDeleteCategory = { cat -> viewModel.deleteCategory(cat) },
+                        createSignal = if (createTarget == AppScreen.BUDGETS) createSignal else 0,
+                        onCreateConsumed = { if (createTarget == AppScreen.BUDGETS) createTarget = null }
                     )
                     AppScreen.MEMBERS -> MembersScreen(
                         members = uiState.members,
                         onAddMember = { viewModel.addMember(it) },
                         onUpdateMember = { viewModel.updateMember(it) },
                         onDeleteMember = { viewModel.deleteMember(it) },
-                        createSignal = createSignal
+                        createSignal = if (createTarget == AppScreen.MEMBERS) createSignal else 0,
+                        onCreateConsumed = { if (createTarget == AppScreen.MEMBERS) createTarget = null }
                     )
                     AppScreen.PROJECTS -> ProjectsScreen(
                         projects = uiState.projectSummaries,
                         transactions = uiState.allTransactions,
-                        createSignal = createSignal,
+                        createSignal = if (createTarget == AppScreen.PROJECTS) createSignal else 0,
                         onAddProject = { name, description, target, kind ->
                             viewModel.addProject(name, description, target, kind)
                         },
                         onUpdateProject = { project, name, description, target, closed, kind ->
                             viewModel.updateProject(project, name, description, target, closed, kind)
                         },
-                        onDeleteProject = { project -> viewModel.deleteProject(project) }
+                        onDeleteProject = { project -> viewModel.deleteProject(project) },
+                        onCreateConsumed = { if (createTarget == AppScreen.PROJECTS) createTarget = null }
                     )
                     AppScreen.TIMELINE -> TimelineScreen(
                         uiState = uiState,
