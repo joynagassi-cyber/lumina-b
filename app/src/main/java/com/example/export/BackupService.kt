@@ -197,7 +197,7 @@ object BackupService {
     ): BackupSnapshot {
         if (verifyExistingWorkspace) verifyWorkspace(payload.snapshot, repository)
         val createdFiles = mutableListOf<File>()
-        try {
+        return try {
             val receiptPaths = writeReceiptFiles(context, repository.workspaceId, payload.receiptFilesByTransactionUid)
             createdFiles += receiptPaths.values.map(::File)
             val transactions = payload.snapshot.transactions.map { transaction ->
