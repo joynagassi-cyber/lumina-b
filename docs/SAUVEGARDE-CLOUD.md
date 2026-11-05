@@ -12,7 +12,7 @@
 
 Les personnes ont des comptes cloud individuels, puis rejoignent le même espace d'église avec une invitation. Tous les membres lisent le même pointeur de sauvegarde courant. Les objets et versions précédentes sont immuables; il n'y a pas de règle client de suppression. Un éditeur peut publier une nouvelle version seulement si la génération qu'il a lue est toujours courante : une mise à jour concurrente est refusée au lieu d'écraser silencieusement le travail d'un autre appareil. Les rôles d'invitation disponibles sont `editor` et `viewer`.
 
-Les règles RLS limitent les données et les objets aux membres de l'église concernée; `service_role` n'est pas requis dans l'application. Le SQL reproductible est dans `supabase/migrations/`.
+Les règles RLS limitent les données et les objets aux membres de l'église concernée; `service_role` n'est pas requis dans l'application. Le SQL reproductible est dans `supabase/migrations/`. Les six migrations enregistrées comprennent le bucket privé, l'espace commun par église, les droits minimaux, l'acceptation idempotente des invitations, l'unicité de l'identité locale et les invitations éditeur.
 
 Le plan Free est celui demandé et peut suffire en volume pour quelques églises, mais le volume réel (notamment les photos de justificatifs) et les limites de disponibilité/rétention du fournisseur restent à surveiller. Cela ne constitue pas une garantie absolue contre une panne ou une perte. Prévoir des exports externes et tester régulièrement la restauration.
 
@@ -22,15 +22,14 @@ Les archives seront transmises par HTTPS et protégées par le chiffrement gér�
 
 Les exports portables Lumina retirent déjà les comptes locaux et PIN. Il faudra conserver cette règle pour les sauvegardes cloud.
 
-## Ce qui n'est pas encore fait
+## État de l'intégration Android
 
-La création du projet et du stockage ne relie pas encore l'application Android à Supabase. **Aucune donnée n'a été téléversée et aucune restauration cloud automatique n'est active à ce stade.** Il reste à implémenter et tester dans l'application :
+Le dépôt contient maintenant le client REST Supabase et le parcours de base : session anonyme technique (aucun e-mail, mot de passe ou écran de connexion cloud), création/association d'un espace, invitation, archive sans comptes locaux/PIN, téléversement versionné, comparaison SHA-256, détection de conflits et restauration avec copie locale de sécurité. Le bouton d'activation se trouve dans Paramètres → Sauvegarde; les codes d'invitation cloud sont dans Équipe & échange.
 
-1. connexion cloud indépendante du PIN local, configuration d'authentification/e-mail de production et invitation d'un compte à l'espace de son église;
-2. création d'archives sans comptes locaux/PIN, téléversement en arrière-plan avec reprise après absence de réseau;
-3. lecture du pointeur commun et des versions, contrôle SHA-256, restauration avec sauvegarde locale préalable;
-4. traitement dans l'application des conflits de génération : ne jamais écraser silencieusement une version publiée depuis un autre appareil;
-5. tests réels d'isolation entre deux églises, d'accès entre membres d'une même église, d'invitation à usage unique et de restauration après désinstallation/formatage simulé;
-6. politique de rétention, surveillance des quotas Free et procédure de suppression de compte.
+Les nouvelles archives sont créées lors de l'activation, puis l'application vérifie au démarrage d'une session locale si le contenu a changé. Elle n'envoie pas une nouvelle version si l'empreinte logique n'a pas changé. Les sessions cloud sont renouvelées avec le jeton de rafraîchissement. L'archive n'est pas chiffrée de bout en bout; seuls HTTPS et le chiffrement géré par Supabase sont utilisés, comme demandé.
 
-Le service cloud réduit fortement le risque de perte du téléphone, mais ne permet pas de garantir une absence absolue de perte : il faut garder une copie externe/export périodique, tester les restaurations et surveiller le volume consommé par les églises.
+**Limites importantes pour les essais :** les téléversements utilisent WorkManager avec une contrainte réseau, reprise exponentielle et vérification périodique (au plus tôt toutes les 15 minutes, selon les règles Android); ce n'est pas une garantie d'envoi instantané. Les jetons anonymes sont liés à l'installation et exclus des sauvegardes Android; après formatage ou perte de l'appareil, il faut qu'un autre membre encore connecté génère un nouveau code d'invitation. Si tous les appareils et tous les codes sont perdus, ces comptes anonymes ne permettent pas de récupérer l'accès au cloud. Il faudra concevoir une vraie procédure de récupération (compte récupérable ou clé/code conservé hors du téléphone) avant de promettre une restauration garantie. Les installations existantes avec une identité d'église différente et des données locales non vides doivent d'abord être rapprochées manuellement; une restauration qui détecte une autre église est refusée.
+
+Avant de considérer le parcours prêt pour la production, il faut encore compiler et tester sur Android, puis valider avec deux appareils : première sauvegarde, invitation/acceptation, même espace partagé, conflits simultanés, restauration après effacement simulé, accès refusé entre deux églises et comportement hors ligne. La CI seule ne prouve pas la restauration réelle. Le plan Free et le stockage doivent aussi être surveillés; conserver des exports indépendants reste recommandé.
+
+Le service cloud réduit le risque de perte du téléphone, mais ne permet pas de garantir une absence absolue de perte.

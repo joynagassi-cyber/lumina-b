@@ -228,6 +228,9 @@ fun LuminaApp(
     var pendingRestore by remember {
         mutableStateOf<Pair<android.net.Uri, com.example.export.BackupSnapshot>?>(null)
     }
+    var cloudBackupStatus by remember(activeWorkspace.id) {
+        mutableStateOf(com.example.cloud.CloudBackupLocalStore.status(context, activeWorkspace.id))
+    }
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -314,6 +317,7 @@ fun LuminaApp(
     // Réception des messages de l'application
     LaunchedEffect(Unit) {
         viewModel.eventFlow.collectLatest { message ->
+            cloudBackupStatus = com.example.cloud.CloudBackupLocalStore.status(context, activeWorkspace.id)
             snackbarHostState.showSnackbar(message)
         }
     }
@@ -987,6 +991,19 @@ fun LuminaApp(
                                 if (file.name.endsWith(".lumina-invite")) "Invitation légère Lumina" else "Échange de données Lumina"
                             )
                         },
+                        onCreateCloudInvite = { ctx, onResult -> viewModel.createCloudInvite(ctx, onResult) },
+                        onAcceptCloudInvite = { ctx, code, onResult ->
+                            viewModel.acceptCloudInvite(ctx, code) { result ->
+                                if (result.isSuccess) {
+                                    com.example.cloud.CloudBackupScheduler.schedule(
+                                        ctx,
+                                        activeWorkspace.id,
+                                        activeWorkspace.databaseName
+                                    )
+                                }
+                                onResult(result)
+                            }
+                        },
                         onLogout = { viewModel.logout(context) }
                     )
                     AppScreen.SETTINGS -> SettingsScreen(
@@ -1043,6 +1060,34 @@ fun LuminaApp(
                                 }
                             }
                         },
+                        onEnableCloudBackup = {
+                            viewModel.enableCloudBackup(context) { result ->
+                                com.example.cloud.CloudBackupScheduler.schedule(
+                                    context,
+                                    activeWorkspace.id,
+                                    activeWorkspace.databaseName
+                                )
+                                result.onSuccess { message ->
+                                    cloudBackupStatus = message
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }.onFailure { error ->
+                                    cloudBackupStatus = error.message ?: "Sauvegarde cloud indisponible"
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }
+                            }
+                        },
+                        onRestoreCloudBackup = {
+                            viewModel.restoreCloudBackup(context) { result ->
+                                result.onSuccess { snapshot ->
+                                    cloudBackupStatus = "Restauration cloud terminée : ${snapshot.transactionCount} écritures, ${snapshot.memberCount} membres."
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }.onFailure { error ->
+                                    cloudBackupStatus = error.message ?: "Restauration cloud impossible"
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }
+                            }
+                        },
+                        cloudBackupStatus = cloudBackupStatus,
                         lastAutoBackupLabel = if (uiState.isDemoMode) "" else lastAutoBackupLabel
                     )
                 }

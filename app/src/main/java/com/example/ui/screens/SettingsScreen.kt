@@ -114,6 +114,9 @@ fun SettingsScreen(
     onCreateBackup: (String) -> Unit = {},
     onRequestRestore: (String) -> Unit = {},
     onRestoreAuto: () -> Unit = {},
+    onEnableCloudBackup: () -> Unit = {},
+    onRestoreCloudBackup: () -> Unit = {},
+    cloudBackupStatus: String = "",
     lastAutoBackupLabel: String = "",
     modifier: Modifier = Modifier
 ) {
@@ -122,6 +125,7 @@ fun SettingsScreen(
     var confirmWipe: Boolean? by remember { mutableStateOf(null) }
     var showBackupDialog: Boolean by remember { mutableStateOf(false) }
     var showRestoreDialog: Boolean by remember { mutableStateOf(false) }
+    var showCloudRestoreConfirm: Boolean by remember { mutableStateOf(false) }
     var showFeatureGuide: Boolean by remember { mutableStateOf(false) }
     var guideStep by remember { mutableIntStateOf(0) }
     var password: String by remember { mutableStateOf("") }
@@ -653,6 +657,34 @@ fun SettingsScreen(
                     Text("Restaurer", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Copie cloud partagée", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                cloudBackupStatus.ifBlank {
+                    "Les sauvegardes restent privées dans l'espace cloud de l'église. L'activation crée une première copie; les mises à jour se font discrètement à l'ouverture avec Internet."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "Le fournisseur chiffre les données au repos, mais peut techniquement accéder au contenu. Une restauration remplace les données du dossier; une copie locale de sécurité est conservée avant le remplacement.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = onEnableCloudBackup,
+                    enabled = uiState.canWrite && !uiState.isDemoMode,
+                    modifier = Modifier.weight(1f).testTag("enable_cloud_backup")
+                ) { Text("Activer / vérifier") }
+                OutlinedButton(
+                    onClick = { showCloudRestoreConfirm = true },
+                    enabled = !uiState.isDemoMode,
+                    modifier = Modifier.weight(1f).testTag("restore_cloud_backup")
+                ) { Text("Restaurer le cloud") }
+            }
         }
 
         }
@@ -726,6 +758,25 @@ fun SettingsScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showFeatureGuide = false }) { Text("Fermer le guide") }
+            }
+        )
+    }
+
+    if (showCloudRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCloudRestoreConfirm = false },
+            title = { Text("Restaurer la sauvegarde cloud ?") },
+            text = {
+                Text("Cette action remplacera les données du dossier par la dernière version partagée de l'église. Une copie locale de sécurité sera créée avant la restauration.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCloudRestoreConfirm = false
+                    onRestoreCloudBackup()
+                }) { Text("Restaurer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloudRestoreConfirm = false }) { Text("Annuler") }
             }
         )
     }

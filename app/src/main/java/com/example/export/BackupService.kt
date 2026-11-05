@@ -133,6 +133,72 @@ object BackupService {
         )
     }
 
+    /** Archive bytes for authenticated cloud storage; local accounts/PINs are never included. */
+    internal suspend fun createCloudArchive(
+        context: Context,
+        repository: TransactionRepository
+    ): ByteArray = withContext(Dispatchers.IO) {
+        val snapshot = repository.snapshotAll().copy(users = emptyList())
+        val receipts = collectReceiptFiles(context, snapshot, repository.workspaceId)
+        LuminaArchiveCodec.encode(snapshot, receipts).also { bytes ->
+            require(bytes.isNotEmpty() && bytes.size <= MAX_INPUT_BYTES) {
+                "La sauvegarde dépasse la taille maximale autorisée par le stockage cloud."
+            }
+        }
+    }
+
+    /** Keep a private local restore point before replacing the current dossier from cloud. */
+    internal suspend fun createCloudRestoreSafetyCopy(
+        context: Context,
+        repository: TransactionRepository
+    ): File = withContext(Dispatchers.IO) {
+        val snapshot = repository.snapshotAll().copy(users = emptyList())
+        val receipts = collectReceiptFiles(context, snapshot, repository.workspaceId)
+        val bytes = LuminaArchiveCodec.encode(snapshot, receipts)
+        val directory = workspaceDirectory(context.filesDir, "cloud-restore-safety", repository.workspaceId)
+            .apply { mkdirs() }
+        val file = File(directory, "avant-restauration-${System.currentTimeMillis()}.zip")
+        val temp = File(directory, ".${file.name}.tmp")
+        try {
+            temp.writeBytes(bytes)
+            check(temp.renameTo(file)) { "Impossible de conserver la copie locale de sécurité." }
+        } finally {
+            if (temp.exists()) temp.delete()
+        }
+        directory.listFiles()?.filter { it.isFile && it != file }
+            ?.sortedByDescending { it.lastModified() }
+            ?.drop(2)
+            ?.forEach { it.delete() }
+        file
+    }
+
+    /** Stable logical fingerprint excludes timestamps and local accounts, so idle app launches don't create versions. */
+    internal suspend fun cloudContentFingerprint(
+        context: Context,
+        repository: TransactionRepository
+    ): String = withContext(Dispatchers.IO) {
+        val snapshot = repository.snapshotAll().copy(users = emptyList(), createdAt = 0L)
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        digest.update(BackupCodec.encode(snapshot).toByteArray(Charsets.UTF_8))
+        collectReceiptFiles(context, snapshot, repository.workspaceId).toSortedMap().forEach { (uid, bytes) ->
+            digest.update(uid.toByteArray(Charsets.UTF_8))
+            digest.update(java.security.MessageDigest.getInstance("SHA-256").digest(bytes))
+        }
+        digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+    }
+
+    /** Restore only a checked Lumina archive; device accounts remain local and unchanged. */
+    internal suspend fun restoreCloudArchive(
+        context: Context,
+        repository: TransactionRepository,
+        bytes: ByteArray
+    ): BackupSnapshot = withContext(Dispatchers.IO) {
+        require(bytes.size in 1..MAX_INPUT_BYTES) { "La sauvegarde cloud est vide ou trop volumineuse." }
+        val payload = decodePayload(bytes, password = "")
+        require(payload.isArchive) { "Format de sauvegarde cloud non pris en charge." }
+        restorePayload(context, repository, payload.copy(snapshot = payload.snapshot.copy(users = emptyList())))
+    }
+
     suspend fun restore(
         context: Context,
         repository: TransactionRepository,

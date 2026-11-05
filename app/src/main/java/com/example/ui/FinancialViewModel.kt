@@ -1036,7 +1036,9 @@ class FinancialViewModel(
     fun wipeData(context: Context, fullReset: Boolean) {
         viewModelScope.launch {
             if (!ensurePermission(needDelete = true)) return@launch
+            com.example.cloud.CloudBackupLocks.withWorkspaceLock(repository.workspaceId) {
             if (fullReset) {
+                com.example.cloud.CloudBackupLocalStore.requireRestoreBeforeUpload(context.applicationContext, repository.workspaceId)
                 repository.wipeEverything()
                 repository.deleteAllProjects()
                 clearGeneratedFiles(context)
@@ -1046,12 +1048,14 @@ class FinancialViewModel(
                 _currentUser.value = null
                 _eventFlow.emit("Toutes les données ont été effacées")
             } else {
+                com.example.cloud.CloudBackupLocalStore.requireRestoreBeforeUpload(context.applicationContext, repository.workspaceId)
                 repository.wipeOperationalData()
                 clearGeneratedFiles(context)
                 _selectedCashRegisterId.value = null
                 _selectedCategoryFilter.value = null
                 _searchQuery.value = ""
                 _eventFlow.emit("Écritures, membres et budgets supprimés")
+            }
             }
         }
     }
@@ -1066,7 +1070,71 @@ class FinancialViewModel(
         viewModelScope.launch {
             if (!_demoMode.value) {
                 com.example.export.BackupService.autoSnapshot(context.applicationContext, repository)
+                val workspace = com.example.data.ChurchWorkspaceCatalog(context.applicationContext)
+                    .getActiveWorkspace()
+                if (workspace?.id == repository.workspaceId) {
+                    com.example.cloud.CloudBackupScheduler.schedule(
+                        context.applicationContext,
+                        workspace.id,
+                        workspace.databaseName
+                    )
+                }
             }
+        }
+    }
+
+    fun enableCloudBackup(context: Context, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Sauvegarde désactivée en mode démonstration ou lecture seule")))
+                return@launch
+            }
+            onResult(runCatching {
+                com.example.cloud.CloudBackupCoordinator.enableForCurrentWorkspace(context.applicationContext, repository)
+            })
+        }
+    }
+
+    fun createCloudInvite(context: Context, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Invitation cloud désactivée en mode démonstration ou lecture seule")))
+                return@launch
+            }
+            onResult(runCatching {
+                com.example.cloud.CloudBackupCoordinator.createInvite(context.applicationContext, repository)
+            })
+        }
+    }
+
+    fun acceptCloudInvite(context: Context, token: String, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Association cloud désactivée en mode démonstration ou lecture seule")))
+                return@launch
+            }
+            onResult(runCatching {
+                com.example.cloud.CloudBackupCoordinator.acceptInvite(context.applicationContext, repository, token.trim())
+            })
+        }
+    }
+
+    fun restoreCloudBackup(context: Context, onResult: (Result<com.example.export.BackupSnapshot>) -> Unit) {
+        viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Restauration désactivée en mode démonstration ou lecture seule")))
+                return@launch
+            }
+            val result = runCatching {
+                com.example.cloud.CloudBackupCoordinator.restoreLatest(context.applicationContext, repository)
+            }
+            if (result.isSuccess) {
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _eventFlow.emit("Sauvegarde cloud restaurée après vérification")
+            }
+            onResult(result)
         }
     }
 
