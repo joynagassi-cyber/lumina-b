@@ -43,20 +43,16 @@ class ReportExporterTest {
         csv.delete()
     }
 
-    @Test
-    fun rapport_pdf_dedie_est_un_pdf_distinct() {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val pdf = ReportExporter.generateTablePdf(
-            context = context,
+    @Test(expected = IllegalArgumentException::class)
+    fun rapport_tableau_refuse_un_tableau_sans_colonnes() {
+        ReportExporter.generateTablePdf(
+            context = ApplicationProvider.getApplicationContext<Context>(),
             profile = ChurchProfileEntity(churchName = "Église de Kandi"),
             title = "Rapport des membres",
             periodLabel = "Tout le registre",
-            columns = listOf("Nom", "Statut"),
-            rows = listOf(listOf("Awa Bio", "Actif"))
+            columns = emptyList(),
+            rows = emptyList()
         )
-        assertTrue(pdf.name.endsWith(".pdf"))
-        assertEquals("%PDF", pdf.inputStream().bufferedReader().use { it.readLine().take(4) })
-        pdf.delete()
     }
 
     @Test
