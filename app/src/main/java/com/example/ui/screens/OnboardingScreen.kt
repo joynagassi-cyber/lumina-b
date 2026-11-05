@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -22,14 +23,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -38,6 +42,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.Surface
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,14 +53,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.res.painterResource
-import com.example.R
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
@@ -63,9 +69,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import com.example.data.ChurchProfileEntity
 import com.example.ui.designsystem.LuminaBranding
+import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.theme.AccentPalettes
 import com.example.ui.theme.parseHexColor
 import com.example.util.ImageStore
+import com.example.export.BackupSnapshot
 
 /**
  * Assistant de premier lancement.
@@ -81,10 +89,19 @@ fun OnboardingScreen(
     onFinish: (ChurchProfileEntity) -> Unit,
     modifier: Modifier = Modifier,
     startAtStep: Int = 0,
-    finishLabel: String = "Ouvrir mon dossier"
+    finishLabel: String = "Ouvrir mon dossier",
+    onJoinFromFile: (Uri, String, (Result<BackupSnapshot>) -> Unit) -> Unit = { _, _, result ->
+        result(Result.failure(IllegalStateException("Import de fichier indisponible")))
+    }
 ) {
     val context = LocalContext.current
+    var introPage by remember { mutableIntStateOf(0) }
     var step by remember { mutableIntStateOf(startAtStep.coerceIn(0, 5)) }
+    var selectedArchiveUri by remember { mutableStateOf<Uri?>(null) }
+    var showJoinDialog by remember { mutableStateOf(false) }
+    var joinPassword by remember { mutableStateOf("") }
+    var joining by remember { mutableStateOf(false) }
+    var joinError by remember { mutableStateOf<String?>(null) }
 
     var churchName by remember { mutableStateOf(initialProfile.churchName) }
     var denomination by remember { mutableStateOf(initialProfile.denomination) }
@@ -112,6 +129,17 @@ fun OnboardingScreen(
         }
     }
 
+    val archivePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            selectedArchiveUri = uri
+            joinPassword = ""
+            joinError = null
+            showJoinDialog = true
+        }
+    }
+
     val accent = parseHexColor(accentHex)
 
     Box(
@@ -120,6 +148,17 @@ fun OnboardingScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag("onboarding_screen")
     ) {
+        if (introPage < 3) {
+            ChurchIntroScreen(
+                page = introPage,
+                accentColor = accent,
+                joinError = joinError,
+                joining = joining,
+                onContinue = { introPage = (introPage + 1).coerceAtMost(3) },
+                onSkip = { introPage = 3 },
+                onJoin = { archivePicker.launch(arrayOf("*/*")) }
+            )
+        } else {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -152,7 +191,7 @@ fun OnboardingScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 when (step) {
-                    0 -> WelcomeStep()
+                    0 -> WelcomeStep(accentColor = accent)
                     1 -> IdentityStep(
                         churchName = churchName,
                         onChurchNameChange = { churchName = it; errorMessage = null },
@@ -293,8 +332,181 @@ fun OnboardingScreen(
                 )
             }
         }
+        }
+
+        if (showJoinDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!joining) showJoinDialog = false },
+                title = { Text("Rejoindre une église avec un fichier Lumina") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            "Vous pouvez importer une invitation légère (.lumina-invite) ou une archive Lumina complète. " +
+                                "L'invitation ne contient pas les finances : après avoir choisi votre rôle et créé votre profil et PIN, importez séparément un fichier d'échange si l'église vous en transmet un. " +
+                                "L'archive complète, elle, apporte aussi les données du dossier. Vos accès restent personnels sur cet appareil."
+                        )
+                        OutlinedTextField(
+                            value = joinPassword,
+                            onValueChange = { joinPassword = it },
+                            label = { Text("Phrase de passe (obligatoire pour l'invitation légère)") },
+                            singleLine = true,
+                            visualTransformation = PasswordVisualTransformation(),
+                            enabled = !joining,
+                            modifier = Modifier.fillMaxWidth().testTag("join_archive_password")
+                        )
+                        joinError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !joining && selectedArchiveUri != null,
+                        onClick = {
+                            val uri = selectedArchiveUri ?: return@TextButton
+                            joining = true
+                            joinError = null
+                            onJoinFromFile(uri, joinPassword) { result ->
+                                joining = false
+                                result.onSuccess {
+                                    showJoinDialog = false
+                                    selectedArchiveUri = null
+                                    joinPassword = ""
+                                }.onFailure {
+                                    joinError = it.message ?: "Import impossible. Aucune donnée n'a été remplacée."
+                                }
+                            }
+                        }
+                    ) { Text(if (joining) "Importation…" else "Importer et continuer") }
+                },
+                dismissButton = {
+                    TextButton(enabled = !joining, onClick = { showJoinDialog = false }) { Text("Annuler") }
+                }
+            )
+        }
     }
 }
+
+@Composable
+private fun ChurchIntroScreen(
+    page: Int,
+    accentColor: Color,
+    joinError: String?,
+    joining: Boolean,
+    onContinue: () -> Unit,
+    onSkip: () -> Unit,
+    onJoin: () -> Unit
+) {
+    val slides = listOf(
+        IntroSlide(
+            icon = Icons.Default.AccountBalance,
+            title = "Une gestion financière claire",
+            description = "Suivez les offrandes, les dépenses et les soldes de votre église dans un espace simple et lisible.",
+            badge = "Finances sous contrôle"
+        ),
+        IntroSlide(
+            icon = Icons.Default.PieChart,
+            title = "Tout votre dossier au même endroit",
+            description = "Caisses, budgets, projets, collectes et historique restent liés au même dossier d'église.",
+            badge = "Budgets • Caisses • Projets"
+        ),
+        IntroSlide(
+            icon = Icons.Default.Groups,
+            title = "Une équipe qui avance ensemble",
+            description = "Partagez un fichier Lumina hors ligne. Chaque personne crée son profil et son code PIN sur son appareil.",
+            badge = "Partage maîtrisé, sans cloud"
+        )
+    )
+    val slide = slides[page.coerceIn(0, slides.lastIndex)]
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("LUMINA  •  ÉGLISE", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, color = accentColor)
+            TextButton(onClick = onSkip) { Text("Passer") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            repeat(3) { index ->
+                Box(
+                    Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(8.dp))
+                        .background(if (index <= page) accentColor else MaterialTheme.colorScheme.surfaceVariant)
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(270.dp)
+                .clip(RoundedCornerShape(30.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                Modifier.size(208.dp).clip(CircleShape).background(accentColor.copy(alpha = 0.08f))
+            )
+            Box(
+                Modifier.size(146.dp).clip(CircleShape).background(accentColor.copy(alpha = 0.13f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(slide.icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(74.dp))
+            }
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 22.dp, vertical = 18.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = Color.White,
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(slide.badge, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        Text(slide.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
+        Text(slide.description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!joinError.isNullOrBlank()) {
+            Text(joinError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+        }
+        Button(
+            onClick = onContinue,
+            enabled = !joining,
+            modifier = Modifier.fillMaxWidth().height(54.dp).testTag("church_intro_continue"),
+            shape = RoundedCornerShape(18.dp)
+        ) {
+            Text(if (page == 2) "Configurer mon église" else "Suivant", fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+        }
+        if (page == 0) {
+            TextButton(
+                onClick = onJoin,
+                enabled = !joining,
+                modifier = Modifier.fillMaxWidth().testTag("join_with_lumina_file")
+            ) {
+                Icon(Icons.Default.Description, contentDescription = null, tint = accentColor)
+                Spacer(Modifier.width(8.dp))
+                Text("J'ai un fichier Lumina — rejoindre mon église", color = accentColor)
+            }
+        }
+    }
+}
+
+private data class IntroSlide(
+    val icon: ImageVector,
+    val title: String,
+    val description: String,
+    val badge: String
+)
 
 @Composable
 private fun OnboardingInfoStep(
@@ -348,13 +560,11 @@ private fun OnboardingInfoStep(
 }
 
 @Composable
-private fun WelcomeStep() {
+private fun WelcomeStep(accentColor: Color) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        Image(
-            painter = painterResource(id = R.drawable.lumina_brand_icon),
-            contentDescription = "Icône Lumina",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp))
+        LuminaBrandMark(
+            modifier = Modifier.size(72.dp),
+            backgroundColor = accentColor
         )
         Spacer(modifier = Modifier.height(20.dp))
         Text(

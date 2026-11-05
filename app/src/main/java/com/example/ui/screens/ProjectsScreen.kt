@@ -58,6 +58,7 @@ import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.ProjectSummary
 import com.example.ui.designsystem.LuminaTokens
+import com.example.ui.designsystem.GroupedCard
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import com.example.util.CurrencyFormatter
@@ -186,6 +187,33 @@ fun ProjectsScreen(
                 }
             }
         } else {
+            val targetProjects = projects.filter { it.targetCents > 0L }.sortedByDescending { it.progress }.take(5)
+            if (targetProjects.isNotEmpty()) {
+                GroupedCard(title = "Avancement des objectifs", testTag = "project_progress_chart") {
+                    targetProjects.forEachIndexed { index, project ->
+                        Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(project.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                Text("${(project.progress * 100).toInt()} %", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.height(5.dp))
+                            LinearProgressIndicator(
+                                progress = { project.progress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth().height(8.dp).clip(LuminaTokens.ShapePill),
+                                color = if (project.isClosed) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                                trackColor = MaterialTheme.colorScheme.surfaceVariant
+                            )
+                            Text(
+                                "Collecté ${CurrencyFormatter.format(project.collectedCents)} sur ${CurrencyFormatter.format(project.targetCents)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (index < targetProjects.lastIndex) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
             projects.forEach { project ->
                 Card(
                     modifier = Modifier

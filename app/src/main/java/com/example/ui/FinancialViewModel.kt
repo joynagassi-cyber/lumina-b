@@ -13,11 +13,14 @@ import com.example.data.MemberEntity
 import com.example.data.TransactionEntity
 import com.example.data.ProjectEntity
 import com.example.data.TransactionRepository
+import com.example.data.SyncContributorEntity
 import com.example.data.TransactionType
 import com.example.data.UserEntity
 import com.example.data.UserRole
+import com.example.sync.SyncConflictItem
 import com.example.sync.SyncManager
 import com.example.util.PinHasher
+import com.example.export.ChurchInvitationService
 import com.example.export.ReportExporter
 import com.example.ui.theme.ThemeMode
 import com.example.util.AmountDisplayMode
@@ -206,6 +209,8 @@ data class FinancialUiState(
     val members: List<MemberEntity> = emptyList(),
     val users: List<UserEntity> = emptyList(),
     val currentUser: UserEntity? = null,
+    val syncContributors: List<SyncContributorEntity> = emptyList(),
+    val firstUserIsInvitee: Boolean = false,
     val projects: List<ProjectEntity> = emptyList(),
     val projectSummaries: List<ProjectSummary> = emptyList(),
     val bilan: BilanSnapshot = BilanSnapshot(),
@@ -215,7 +220,9 @@ data class FinancialUiState(
     val canManageUsers: Boolean = true,
     val isDemoMode: Boolean = false,
     val workspaceId: String = "default",
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val syncConflicts: List<SyncConflictItem> = emptyList(),
+    val syncConflictHistory: List<SyncConflictItem> = emptyList()
 )
 
 /** Événement destiné à une notification système locale. */
@@ -225,8 +232,11 @@ data class NotificationEvent(val title: String, val body: String)
 internal fun isTransactionLocked(timestamp: Long, closedUntilMillis: Long): Boolean =
     closedUntilMillis > 0L && timestamp <= closedUntilMillis
 
+private fun UserEntity.auditLabel(): String = "$displayName — ${roleValue.label}"
+
 class FinancialViewModel(
-    private val repository: TransactionRepository
+    private val repository: TransactionRepository,
+    private val appContext: Context? = null
 ) : ViewModel() {
 
     private val monthFormat = SimpleDateFormat("yyyy-MM", Locale.FRANCE)
@@ -249,6 +259,13 @@ class FinancialViewModel(
     private val _amountDisplayMode = MutableStateFlow<AmountDisplayMode?>(null)
     private val _selectedCashRegisterId = MutableStateFlow<Long?>(null)
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
+    private val _syncConflicts = MutableStateFlow<List<SyncConflictItem>>(emptyList())
+    private val _syncConflictHistory = MutableStateFlow<List<SyncConflictItem>>(emptyList())
+    private val pendingInviteKey = "pending_invited_user_${repository.workspaceId}"
+    private val _firstUserIsInvitee = MutableStateFlow(
+        appContext?.getSharedPreferences("lumina_onboarding", Context.MODE_PRIVATE)
+            ?.getBoolean(pendingInviteKey, false) ?: false
+    )
 
     private val _eventFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val eventFlow: SharedFlow<String> = _eventFlow.asSharedFlow()
@@ -280,12 +297,23 @@ class FinancialViewModel(
         _customPeriodRange,
         _demoMode,
         _demoProfile,
-        _demoTransactions
+        _demoTransactions,
+        _syncConflicts,
+        _syncConflictHistory,
+        repository.syncContributors,
+        _firstUserIsInvitee
     ) { args: Array<Any?> ->
         val demoMode = args[21] as Boolean
         val demoProfile = args[22] as ChurchProfileEntity
         @Suppress("UNCHECKED_CAST")
         val demoTransactions = args[23] as List<TransactionEntity>
+        @Suppress("UNCHECKED_CAST")
+        val syncConflicts = if (demoMode) emptyList() else args[24] as List<SyncConflictItem>
+        @Suppress("UNCHECKED_CAST")
+        val syncConflictHistory = if (demoMode) emptyList() else args[25] as List<SyncConflictItem>
+        @Suppress("UNCHECKED_CAST")
+        val syncContributors = if (demoMode) emptyList() else args[26] as List<SyncContributorEntity>
+        val firstUserIsInvitee = !demoMode && (args[27] as Boolean)
         @Suppress("UNCHECKED_CAST")
         val allTx = if (demoMode) demoTransactions else args[0] as List<TransactionEntity>
         @Suppress("UNCHECKED_CAST")
@@ -621,6 +649,8 @@ class FinancialViewModel(
             activeFilterCount = activeFilterCount,
             users = users,
             currentUser = currentUser,
+            syncContributors = syncContributors,
+            firstUserIsInvitee = firstUserIsInvitee,
             projects = allProjects.filter { !it.isDeleted },
             projectSummaries = projectSummaries,
             canWrite = currentUser?.roleValue?.canWrite ?: true,
@@ -628,7 +658,9 @@ class FinancialViewModel(
             canManageUsers = currentUser?.roleValue?.canManageUsers ?: true,
             isDemoMode = demoMode,
             workspaceId = repository.workspaceId,
-            isLoading = false
+            isLoading = false,
+            syncConflicts = syncConflicts,
+            syncConflictHistory = syncConflictHistory
         )
     }
         // Les agrégats (soldes, budgets, graphiques) sont calculés hors du fil
@@ -765,6 +797,9 @@ class FinancialViewModel(
                 )
             )
             _currentUser.value = repository.getUserById(id)
+            _firstUserIsInvitee.value = false
+            appContext?.getSharedPreferences("lumina_onboarding", Context.MODE_PRIVATE)
+                ?.edit()?.remove(pendingInviteKey)?.apply()
             _eventFlow.emit("Bienvenue $name")
         }
     }
@@ -875,14 +910,17 @@ class FinancialViewModel(
                 val syncRoot = java.io.File(context.cacheDir, "echanges")
                 val directory = if (repository.workspaceId == "default") syncRoot
                     else java.io.File(syncRoot, repository.workspaceId)
-                val file = SyncManager.exportFile(
-                    context = context,
-                    repository = repository,
-                    profile = state.profile,
-                    passphrase = passphrase,
-                    authorName = state.currentUser?.displayName ?: "",
-                    directory = directory
-                )
+                val file = withContext(Dispatchers.IO) {
+                    SyncManager.exportFile(
+                        context = context.applicationContext,
+                        repository = repository,
+                        profile = state.profile,
+                        passphrase = passphrase,
+                        authorName = state.currentUser?.displayName ?: "",
+                        authorRole = state.currentUser?.role ?: "",
+                        directory = directory
+                    )
+                }
                 onReady(file)
                 _eventFlow.emit("Fichier d'échange prêt (${state.periodTransactions.size} écritures de la période)")
             } catch (e: Exception) {
@@ -891,16 +929,96 @@ class FinancialViewModel(
         }
     }
 
+    fun createChurchInvitation(
+        context: Context,
+        passphrase: String,
+        onReady: (java.io.File) -> Unit
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    ChurchInvitationService.create(context.applicationContext, repository, passphrase)
+                }
+                onReady(file)
+                _eventFlow.emit("Invitation légère prête. Elle ne contient aucune donnée financière.")
+            } catch (e: Exception) {
+                _eventFlow.emit("Création de l'invitation impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
     fun importSyncFile(context: Context, uri: android.net.Uri, passphrase: String) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
             try {
-                val report = SyncManager.importFile(context, repository, uri, passphrase)
-                val message = "Fusion avec ${report.sourceChurch.ifBlank { "un autre appareil" }} : ${report.summary()}"
+                val report = withContext(Dispatchers.IO) {
+                    SyncManager.importFile(context.applicationContext, repository, uri, passphrase)
+                }
+                if (report.exportedBy.isNotBlank()) {
+                    repository.recordSyncContributor(
+                        displayName = report.exportedBy,
+                        role = report.exportedByRole,
+                        sourceDeviceId = report.sourceDeviceId
+                    )
+                }
+                refreshSyncConflicts(context)
+                val sender = report.exportedByLabel.takeIf { it.isNotBlank() }?.let { " — partagé par $it" }.orEmpty()
+                val message = "Fusion avec ${report.sourceChurch.ifBlank { "un autre appareil" }}$sender : ${report.summary()}"
                 _eventFlow.emit(message)
                 _notificationFlow.emit(NotificationEvent("Synchronisation terminée", message))
             } catch (e: Exception) {
                 _eventFlow.emit("Import impossible : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun refreshSyncConflicts(context: Context) {
+        if (_demoMode.value) {
+            _syncConflicts.value = emptyList()
+            _syncConflictHistory.value = emptyList()
+            return
+        }
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    SyncManager.pendingConflicts(context.applicationContext, repository) to
+                        SyncManager.conflictHistory(context.applicationContext, repository)
+                }
+            }.onSuccess { (pending, history) ->
+                _syncConflicts.value = pending
+                _syncConflictHistory.value = history
+            }.onFailure { _eventFlow.emit("Journal de synchronisation illisible : ${it.localizedMessage}") }
+        }
+    }
+
+    fun resolveSyncConflict(
+        context: Context,
+        conflict: SyncConflictItem,
+        useImported: Boolean,
+        passphrase: String
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            if (useImported && passphrase.length < 6) {
+                _eventFlow.emit("Saisissez la phrase de passe du fichier pour prendre la version reçue")
+                return@launch
+            }
+            try {
+                val report = withContext(Dispatchers.IO) {
+                    SyncManager.resolveConflict(
+                        context.applicationContext,
+                        repository,
+                        conflict,
+                        useImported,
+                        passphrase
+                    )
+                }
+                refreshSyncConflicts(context)
+                val decision = if (useImported) "Version reçue appliquée" else "Version locale conservée"
+                _eventFlow.emit("$decision : ${conflict.kind} « ${conflict.label} ». ${report.summary()}")
+            } catch (e: Exception) {
+                _eventFlow.emit("Arbitrage impossible : ${e.localizedMessage}")
             }
         }
     }
@@ -987,6 +1105,44 @@ class FinancialViewModel(
             }
             val result = runCatching {
                 com.example.export.BackupService.inspect(context.applicationContext, uri, password)
+            }
+            onResult(result)
+        }
+    }
+
+    /** Import d'un dossier partagé sur un appareil neuf, avant la création du PIN local. */
+    fun importOrganizationBackupForNewMember(
+        context: Context,
+        uri: android.net.Uri,
+        password: String,
+        onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Import désactivé en mode démonstration")))
+                return@launch
+            }
+            val result = runCatching {
+                ChurchInvitationService.importForNewMember(
+                    context.applicationContext,
+                    repository,
+                    uri,
+                    password
+                )
+            }
+            if (result.isSuccess) {
+                val invited = result.getOrThrow().importedAsLightInvitation
+                _firstUserIsInvitee.value = invited
+                appContext?.getSharedPreferences("lumina_onboarding", Context.MODE_PRIVATE)
+                    ?.edit()?.let { editor ->
+                        if (invited) editor.putBoolean(pendingInviteKey, true) else editor.remove(pendingInviteKey)
+                        editor.apply()
+                    }
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _currentUser.value = null
+                _eventFlow.emit("Dossier Lumina importé. Créez maintenant votre accès personnel.")
             }
             onResult(result)
         }
@@ -1179,7 +1335,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Le prénom et le nom sont obligatoires")
                 return@launch
             }
-            repository.updateMember(member)
+            repository.updateMember(member.copy(updatedAt = System.currentTimeMillis()))
             _eventFlow.emit("Fiche de ${member.fullName} mise à jour")
         }
     }
@@ -1463,7 +1619,7 @@ class FinancialViewModel(
                 transaction.copy(
                     projectId = projectId,
                     updatedAt = System.currentTimeMillis(),
-                    updatedBy = uiState.value.currentUser?.displayName ?: ""
+                    updatedBy = uiState.value.currentUser?.auditLabel() ?: ""
                 )
             )
             val projectName = uiState.value.projects.firstOrNull { it.id == projectId }?.name
@@ -1536,7 +1692,7 @@ class FinancialViewModel(
                 listOf(transaction)
             }
             val now = System.currentTimeMillis()
-            val author = uiState.value.currentUser?.displayName ?: ""
+            val author = uiState.value.currentUser?.auditLabel() ?: ""
             legs.forEach { leg ->
                 if (!leg.isNeutralised) {
                     repository.insert(
@@ -1609,15 +1765,20 @@ class FinancialViewModel(
             val trimmedName = name.trim()
             if (trimmedName.isBlank()) return@launch
             val previous = repository.getCategoryById(id)
-            repository.updateCategory(
-                CategoryEntity(
-                    id = id,
-                    name = trimmedName,
-                    type = type,
-                    colorHex = colorHex,
-                    isDefault = isDefault
-                )
+            val updatedCategory = (previous ?: CategoryEntity(
+                id = id,
+                name = trimmedName,
+                type = type,
+                colorHex = colorHex,
+                isDefault = isDefault
+            )).copy(
+                name = trimmedName,
+                type = type,
+                colorHex = colorHex,
+                isDefault = isDefault,
+                updatedAt = System.currentTimeMillis()
             )
+            repository.updateCategory(updatedCategory)
             // Renommage : on propage aux écritures et budgets existants.
             if (previous != null && previous.name != trimmedName) {
                 repository.renameCategoryEverywhere(previous.name, trimmedName)
@@ -1677,7 +1838,7 @@ class FinancialViewModel(
                     receiptPhotoUri = receiptPhotoUri,
                     projectId = projectId,
                     updatedAt = System.currentTimeMillis(),
-                    updatedBy = uiState.value.currentUser?.displayName ?: ""
+                    updatedBy = uiState.value.currentUser?.auditLabel() ?: ""
                 )
             )
             _eventFlow.emit("Opération \"${title.trim()}\" mise à jour")
@@ -1717,7 +1878,7 @@ class FinancialViewModel(
                     cashRegisterId = cashRegisterId,
                     cashRegisterName = cashRegisterName,
                     receiptPhotoUri = receiptPhotoUri,
-                    updatedBy = DemoDataset.user.displayName,
+                    updatedBy = DemoDataset.user.auditLabel(),
                     projectId = projectId
                 )
                 _demoTransactions.value = _demoTransactions.value + temporaryEntity
@@ -1741,7 +1902,7 @@ class FinancialViewModel(
                 cashRegisterId = cashRegisterId,
                 cashRegisterName = cashRegisterName,
                 receiptPhotoUri = receiptPhotoUri,
-                updatedBy = uiState.value.currentUser?.displayName ?: "",
+                updatedBy = uiState.value.currentUser?.auditLabel() ?: "",
                 projectId = projectId
             )
             repository.insert(entity)
@@ -1821,7 +1982,7 @@ class FinancialViewModel(
                     memberCount = state.members.size,
                     periodStartMillis = state.bilan.periodStartMillis,
                     periodEndMillis = state.bilan.periodEndMillis,
-                    generatedBy = state.currentUser?.displayName ?: "",
+                    generatedBy = state.currentUser?.auditLabel() ?: "",
                     documentNumber = reportDocumentNumber,
                     workspaceId = outputWorkspaceId()
                 )
@@ -1868,10 +2029,11 @@ class FinancialViewModel(
                 else -> "Sortie"
             }, tx.category, tx.title, tx.cashRegisterName,
                 CurrencyFormatter.format(tx.amountCents, withSign = true, isPositive = tx.type == TransactionType.INCOME),
-                if (tx.isNeutralised) "Neutralisée" else "Validée")
+                if (tx.isNeutralised) "Neutralisée" else "Validée",
+                tx.updatedBy.ifBlank { "—" })
         }
         exportTablePdf(context, state.profile, "Historique des opérations", periodReportLabel(state),
-            listOf("Date", "Type", "Catégorie", "Intitulé", "Caisse", "Montant", "État"), rows)
+            listOf("Date", "Type", "Catégorie", "Intitulé", "Caisse", "Montant", "État", "Modifié par"), rows)
     }
 
     private fun exportTablePdf(
@@ -1885,7 +2047,11 @@ class FinancialViewModel(
         viewModelScope.launch {
             try {
                 val file = withContext(Dispatchers.IO) {
-                    ReportExporter.generateTablePdf(context, profile, title, periodLabel, columns, rows, outputWorkspaceId())
+                    ReportExporter.generateTablePdf(
+                        context, profile, title, periodLabel, columns, rows,
+                        workspaceId = outputWorkspaceId(),
+                        generatedBy = uiState.value.currentUser?.auditLabel() ?: ""
+                    )
                 }
                 ReportExporter.shareFile(context, file, "application/pdf", "$title — ${profile.displayName}")
                 _eventFlow.emit("$title généré en PDF")
@@ -1903,7 +2069,8 @@ class FinancialViewModel(
                     ReportExporter.generateExcelExport(
                         context, periodReportLabel(state), state.periodTransactions,
                         state.totalIncomeCents, state.totalExpenseCents, state.netBalanceCents, state.profile,
-                        outputWorkspaceId()
+                        outputWorkspaceId(),
+                        generatedBy = state.currentUser?.auditLabel() ?: ""
                     )
                 }
                 ReportExporter.shareFile(context, file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1927,7 +2094,8 @@ class FinancialViewModel(
                     totalExpenseCents = state.totalExpenseCents,
                     netBalanceCents = state.netBalanceCents,
                     profile = state.profile,
-                    workspaceId = outputWorkspaceId()
+                    workspaceId = outputWorkspaceId(),
+                    generatedBy = state.currentUser?.auditLabel() ?: ""
                 )
                 ReportExporter.shareFile(
                     context = context,
@@ -2050,12 +2218,13 @@ class FinancialViewModel(
 }
 
 class FinancialViewModelFactory(
-    private val repository: TransactionRepository
+    private val repository: TransactionRepository,
+    private val context: Context? = null
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(FinancialViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return FinancialViewModel(repository) as T
+            return FinancialViewModel(repository, context?.applicationContext) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

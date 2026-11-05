@@ -14,8 +14,8 @@ import java.util.UUID
 /**
  * Rôle d'un utilisateur de l'application.
  *
- * Les droits sont volontairement simples : le trésorier administre, l'assistant
- * saisit sans supprimer, le lecteur consulte (pasteur, commission de contrôle).
+ * Les droits sont volontairement simples : le trésorier administre, le comptable
+ * saisit sans supprimer, l'assistant saisit sans administrer, et le lecteur consulte.
  */
 enum class UserRole(
     val label: String,
@@ -24,6 +24,7 @@ enum class UserRole(
     val canManageUsers: Boolean
 ) {
     TRESORIER("Trésorier", canWrite = true, canDelete = true, canManageUsers = true),
+    COMPTABLE("Comptable", canWrite = true, canDelete = false, canManageUsers = false),
     ASSISTANT("Assistant", canWrite = true, canDelete = false, canManageUsers = false),
     LECTURE("Lecture seule", canWrite = false, canDelete = false, canManageUsers = false)
 }

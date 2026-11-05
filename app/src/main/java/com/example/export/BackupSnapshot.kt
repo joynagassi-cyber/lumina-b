@@ -27,7 +27,9 @@ data class BackupSnapshot(
     val budgets: List<BudgetEntity> = emptyList(),
     val registers: List<CashRegisterEntity> = emptyList(),
     val projects: List<ProjectEntity> = emptyList(),
-    val transactions: List<TransactionEntity> = emptyList()
+    val transactions: List<TransactionEntity> = emptyList(),
+    /** Marqueur transitoire local; n'est jamais sérialisé dans une sauvegarde complète. */
+    val importedAsLightInvitation: Boolean = false
 ) {
     val transactionCount: Int get() = transactions.size
     val memberCount: Int get() = members.size

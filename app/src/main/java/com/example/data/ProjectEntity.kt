@@ -50,6 +50,10 @@ interface ProjectDao {
     @Query("SELECT * FROM projects WHERE isDeleted = 0 ORDER BY isClosed ASC, createdAt DESC")
     suspend fun getAllOnce(): List<ProjectEntity>
 
+    /** Sauvegardes et échanges incluent aussi les suppressions logiques. */
+    @Query("SELECT * FROM projects ORDER BY isClosed ASC, createdAt DESC")
+    suspend fun getAllForBackup(): List<ProjectEntity>
+
     @Query("SELECT * FROM projects WHERE id = :id LIMIT 1")
     suspend fun getById(id: Long): ProjectEntity?
 

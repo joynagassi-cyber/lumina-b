@@ -1,10 +1,13 @@
 package com.example.sync
 
+import com.example.data.BudgetEntity
 import com.example.data.CashRegisterEntity
 import com.example.data.CategoryEntity
 import com.example.data.MemberEntity
+import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
+import android.util.Base64
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,11 +26,20 @@ data class SyncBundle(
     val churchUid: String = "",
     val deviceId: String = "",
     val author: String = "",
+    val authorRole: String = "",
     val exportedAt: Long = System.currentTimeMillis(),
     val registers: List<CashRegisterEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
     val members: List<MemberEntity> = emptyList(),
-    val transactions: List<TransactionEntity> = emptyList()
+    val budgets: List<BudgetEntity> = emptyList(),
+    val projects: List<ProjectEntity> = emptyList(),
+    val transactions: List<TransactionEntity> = emptyList(),
+    /** projectUid stable, keyed par UID d'écriture; les IDs Room ne traversent pas les appareils. */
+    val projectUidByTransactionUid: Map<String, String> = emptyMap(),
+    /** registerUid stable, keyed par UID d'écriture; supporte les changements de nom. */
+    val registerUidByTransactionUid: Map<String, String> = emptyMap(),
+    /** Justificatifs binaires indexés par l'UID de l'écriture. */
+    val receiptFilesByTransactionUid: Map<String, ByteArray> = emptyMap()
 ) {
     val transactionCount: Int get() = transactions.size
 }
@@ -35,9 +47,13 @@ data class SyncBundle(
 object SyncBundleCodec {
 
     const val FORMAT = "lumina-sync"
-    const val VERSION = 1
+    const val VERSION = 3
 
     class UnsupportedFormat(message: String) : Exception(message)
+
+    private const val MAX_RECEIPTS = 10_000
+    private const val MAX_RECEIPT_BYTES = 32 * 1024 * 1024
+    private const val MAX_TOTAL_RECEIPT_BYTES = 100 * 1024 * 1024
 
     fun encode(bundle: SyncBundle): ByteArray {
         val root = JSONObject()
@@ -47,6 +63,7 @@ object SyncBundleCodec {
         root.put("churchUid", bundle.churchUid)
         root.put("deviceId", bundle.deviceId)
         root.put("author", bundle.author)
+        root.put("authorRole", bundle.authorRole)
         root.put("exportedAt", bundle.exportedAt)
 
         val registers = JSONArray()
@@ -75,6 +92,7 @@ object SyncBundleCodec {
                     put("type", category.type.name)
                     put("colorHex", category.colorHex)
                     put("isDefault", category.isDefault)
+                    put("iconName", category.iconName)
                     put("updatedAt", category.updatedAt)
                     put("isDeleted", category.isDeleted)
                 }
@@ -97,6 +115,7 @@ object SyncBundleCodec {
                     put("profession", member.profession)
                     put("notes", member.notes)
                     put("joinedAt", member.joinedAt)
+                    put("isActive", member.isActive)
                     put("updatedAt", member.updatedAt)
                     put("isDeleted", member.isDeleted)
                 }
@@ -104,7 +123,37 @@ object SyncBundleCodec {
         }
         root.put("members", members)
 
+        val budgets = JSONArray()
+        bundle.budgets.forEach { budget ->
+            budgets.put(JSONObject().apply {
+                put("categoryName", budget.categoryName)
+                put("amountCents", budget.amountCents)
+                put("monthYearKey", budget.monthYearKey)
+                put("alertThresholdPercent", budget.alertThresholdPercent)
+                put("isHardLimit", budget.isHardLimit)
+                put("notes", budget.notes)
+            })
+        }
+        root.put("budgets", budgets)
+
+        val projects = JSONArray()
+        bundle.projects.forEach { project ->
+            projects.put(JSONObject().apply {
+                put("uid", project.uid)
+                put("name", project.name)
+                put("description", project.description)
+                put("targetCents", project.targetCents)
+                put("isClosed", project.isClosed)
+                put("createdAt", project.createdAt)
+                put("updatedAt", project.updatedAt)
+                put("isDeleted", project.isDeleted)
+                put("kind", project.kind)
+            })
+        }
+        root.put("projects", projects)
+
         val registerUidById = bundle.registers.associate { it.id to it.uid }
+        val projectUidById = bundle.projects.associate { it.id to it.uid }
         val transactions = JSONArray()
         bundle.transactions.forEach { tx ->
             transactions.put(
@@ -123,10 +172,32 @@ object SyncBundleCodec {
                     put("updatedAt", tx.updatedAt)
                     put("updatedBy", tx.updatedBy)
                     put("isDeleted", tx.isDeleted)
+                    put("reversalOfUid", tx.reversalOfUid)
+                    put("isCancelled", tx.isCancelled)
+                    put("projectUid", projectUidById[tx.projectId] ?: "")
                 }
             )
         }
         root.put("transactions", transactions)
+
+        val transactionUidsWithReceipts = bundle.transactions.filter { it.hasReceipt }.map { it.uid }.toSet()
+        require(bundle.receiptFilesByTransactionUid.size <= MAX_RECEIPTS) { "Trop de justificatifs dans le fichier d'échange" }
+        var receiptBytes = 0L
+        val receipts = JSONObject()
+        bundle.receiptFilesByTransactionUid.forEach { (uid, bytes) ->
+            require(uid.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Identifiant de justificatif invalide" }
+            require(uid in transactionUidsWithReceipts) {
+                "Justificatif sans écriture correspondante"
+            }
+            require(bytes.isNotEmpty() && bytes.size <= MAX_RECEIPT_BYTES) { "Un justificatif est vide ou dépasse la taille autorisée" }
+            receiptBytes += bytes.size
+            require(receiptBytes <= MAX_TOTAL_RECEIPT_BYTES) { "Les justificatifs dépassent la taille autorisée" }
+            receipts.put(uid, Base64.encodeToString(bytes, Base64.NO_WRAP))
+        }
+        require(bundle.transactions.filter { it.hasReceipt }.all { it.uid in bundle.receiptFilesByTransactionUid }) {
+            "Un justificatif est absent. Le fichier d'échange n'a pas été créé."
+        }
+        root.put("receiptFiles", receipts)
 
         return root.toString().toByteArray(Charsets.UTF_8)
     }
@@ -167,6 +238,7 @@ object SyncBundleCodec {
                     .getOrDefault(TransactionType.EXPENSE),
                 colorHex = obj.optString("colorHex", "#3730A3"),
                 isDefault = obj.optBoolean("isDefault"),
+                iconName = obj.optString("iconName", ""),
                 updatedAt = obj.optLong("updatedAt"),
                 isDeleted = obj.optBoolean("isDeleted")
             )
@@ -186,12 +258,49 @@ object SyncBundleCodec {
                 profession = obj.optString("profession"),
                 notes = obj.optString("notes"),
                 joinedAt = obj.optLong("joinedAt"),
+                isActive = obj.optBoolean("isActive", true),
                 updatedAt = obj.optLong("updatedAt"),
                 isDeleted = obj.optBoolean("isDeleted")
             )
         }
 
+        val budgets = root.optJSONArray("budgets").toList { obj ->
+            BudgetEntity(
+                id = 0,
+                categoryName = obj.optString("categoryName"),
+                amountCents = obj.optLong("amountCents"),
+                monthYearKey = obj.optString("monthYearKey"),
+                alertThresholdPercent = obj.optInt("alertThresholdPercent", 80),
+                isHardLimit = obj.optBoolean("isHardLimit", false),
+                notes = obj.optString("notes", "")
+            )
+        }
+
+        val projects = root.optJSONArray("projects").toList { obj ->
+            ProjectEntity(
+                id = 0,
+                uid = obj.optString("uid"),
+                name = obj.optString("name"),
+                description = obj.optString("description"),
+                targetCents = obj.optLong("targetCents"),
+                isClosed = obj.optBoolean("isClosed"),
+                createdAt = obj.optLong("createdAt"),
+                updatedAt = obj.optLong("updatedAt"),
+                isDeleted = obj.optBoolean("isDeleted"),
+                kind = obj.optString("kind", "PROJECT")
+            )
+        }
+
+        val transactionProjectUids = mutableMapOf<String, String>()
+        val transactionRegisterUids = mutableMapOf<String, String>()
+        val transactionUidsWithReceipts = mutableSetOf<String>()
         val transactions = root.optJSONArray("transactions").toList { obj ->
+            val uid = obj.optString("uid")
+            val projectUid = obj.optString("projectUid")
+            val registerUid = obj.optString("registerUid")
+            if (uid.isNotBlank() && projectUid.isNotBlank()) transactionProjectUids[uid] = projectUid
+            if (uid.isNotBlank() && registerUid.isNotBlank()) transactionRegisterUids[uid] = registerUid
+            if (uid.isNotBlank() && obj.optBoolean("hasReceipt")) transactionUidsWithReceipts += uid
             TransactionEntity(
                 id = 0,
                 uid = obj.optString("uid"),
@@ -208,8 +317,39 @@ object SyncBundleCodec {
                 receiptPhotoUri = "",
                 updatedAt = obj.optLong("updatedAt"),
                 updatedBy = obj.optString("updatedBy"),
-                isDeleted = obj.optBoolean("isDeleted")
+                isDeleted = obj.optBoolean("isDeleted"),
+                reversalOfUid = obj.optString("reversalOfUid", ""),
+                isCancelled = obj.optBoolean("isCancelled", false),
+                projectId = 0L
             )
+        }
+
+        val receiptFilesByTransactionUid = linkedMapOf<String, ByteArray>()
+        val receiptObject = root.optJSONObject("receiptFiles") ?: JSONObject()
+        var totalReceiptBytes = 0L
+        val transactionUids = transactions.map { it.uid }.toSet()
+        val receiptKeys = receiptObject.keys()
+        while (receiptKeys.hasNext()) {
+            val uid = receiptKeys.next()
+            require(uid.matches(Regex("[A-Za-z0-9_-]{1,128}")) &&
+                uid in transactionUids && uid in transactionUidsWithReceipts
+            ) {
+                "Le fichier d'échange contient un justificatif sans écriture correspondante"
+            }
+            val encoded = receiptObject.optString(uid)
+            val bytes = try {
+                Base64.decode(encoded, Base64.DEFAULT)
+            } catch (_: IllegalArgumentException) {
+                throw UnsupportedFormat("Justificatif illisible dans le fichier d'échange")
+            }
+            require(bytes.isNotEmpty() && bytes.size <= MAX_RECEIPT_BYTES) { "Un justificatif est vide ou dépasse la taille autorisée" }
+            totalReceiptBytes += bytes.size
+            require(totalReceiptBytes <= MAX_TOTAL_RECEIPT_BYTES) { "Les justificatifs dépassent la taille autorisée" }
+            receiptFilesByTransactionUid[uid] = bytes
+        }
+        require(receiptFilesByTransactionUid.size <= MAX_RECEIPTS) { "Trop de justificatifs dans le fichier d'échange" }
+        require(transactionUidsWithReceipts.all { it in receiptFilesByTransactionUid }) {
+            "Ce fichier de synchronisation ne contient pas tous les justificatifs annoncés. Aucune fusion effectuée."
         }
 
         return SyncBundle(
@@ -217,11 +357,17 @@ object SyncBundleCodec {
             churchUid = root.optString("churchUid", ""),
             deviceId = root.optString("deviceId"),
             author = root.optString("author"),
+            authorRole = root.optString("authorRole"),
             exportedAt = root.optLong("exportedAt"),
             registers = registers,
             categories = categories,
             members = members,
-            transactions = transactions
+            budgets = budgets,
+            projects = projects,
+            transactions = transactions,
+            projectUidByTransactionUid = transactionProjectUids,
+            registerUidByTransactionUid = transactionRegisterUids,
+            receiptFilesByTransactionUid = receiptFilesByTransactionUid
         )
     }
 

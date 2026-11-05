@@ -1,7 +1,6 @@
 package com.example.data
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -13,7 +12,7 @@ interface CategoryDao {
     @Query("SELECT * FROM categories WHERE isDeleted = 0 ORDER BY isDefault DESC, name ASC")
     fun getAllCategories(): Flow<List<CategoryEntity>>
 
-    @Query("SELECT * FROM categories WHERE type = :type ORDER BY isDefault DESC, name ASC")
+    @Query("SELECT * FROM categories WHERE type = :type AND isDeleted = 0 ORDER BY isDefault DESC, name ASC")
     fun getCategoriesByType(type: TransactionType): Flow<List<CategoryEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -25,11 +24,8 @@ interface CategoryDao {
     @Update
     suspend fun updateCategory(category: CategoryEntity)
 
-    @Delete
-    suspend fun deleteCategory(category: CategoryEntity)
-
-    @Query("DELETE FROM categories WHERE id = :id")
-    suspend fun deleteById(id: Long)
+    @Query("UPDATE categories SET isDeleted = 1, updatedAt = :timestamp WHERE id = :id")
+    suspend fun softDeleteById(id: Long, timestamp: Long)
 
     @Query("SELECT COUNT(*) FROM categories WHERE isDeleted = 0")
     suspend fun getCount(): Int

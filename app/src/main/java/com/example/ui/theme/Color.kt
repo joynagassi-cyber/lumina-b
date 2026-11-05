@@ -18,13 +18,12 @@ val OledBorder = Color(0xFF27272A)
 val OledOnSurface = Color(0xFFFAFAFA)
 val OledOnSurfaceVariant = Color(0xFFA1A1AA)
 
-// Thème Monochrome Clair (Blanc pur #FFFFFF)
-// Clair doux (plutôt qu'un blanc éblouissant) : garde une hiérarchie visible
-// entre le fond de page, les cartes et les surfaces sur tous les écrans.
-val PureLightBackground = Color(0xFFF4F5F7)
-val PureLightSurface = Color(0xFFFEFEFF)
-val PureLightSurfaceVariant = Color(0xFFEAECF0)
-val PureLightBorder = Color(0xFFD9DDE5)
+// Thème clair demandé : blanc pur et net, avec des nuances très légères
+// uniquement pour distinguer les cartes, champs et séparateurs.
+val PureLightBackground = Color(0xFFFFFFFF)
+val PureLightSurface = Color(0xFFFFFFFF)
+val PureLightSurfaceVariant = Color(0xFFF4F6FA)
+val PureLightBorder = Color(0xFFE5E9F0)
 val PureLightOnSurface = Color(0xFF17191F)
 val PureLightOnSurfaceVariant = Color(0xFF626875)
 

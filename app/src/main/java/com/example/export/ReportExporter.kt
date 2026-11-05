@@ -757,25 +757,29 @@ object ReportExporter {
 
             val rightRegular = Paint(regularPaint).apply { textAlign = Paint.Align.RIGHT }
             transactions.sortedByDescending { it.timestamp }.forEachIndexed { index, tx ->
-                if (currentY + 16f > PAGE_HEIGHT - 45f) {
+                if (currentY + 24f > PAGE_HEIGHT - 45f) {
                     newPage("DÉTAIL DES ÉCRITURES (SUITE)")
                     currentY = 58f
                     drawTableHeaderRow()
                 }
                 if (index % 2 == 1) {
-                    canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 14f, cardBgPaint)
+                    canvas.drawRect(MARGIN, currentY, PAGE_WIDTH - MARGIN, currentY + 22f, cardBgPaint)
                 }
                 val title = if (tx.note.isNotBlank()) "${tx.title} — ${tx.note}" else tx.title
                 canvas.drawText(dateFormat.format(Date(tx.timestamp)), colDate + 4f, currentY + 10f, regularPaint)
                 canvas.drawText(tx.cashRegisterName.take(15), colCaisse, currentY + 10f, regularPaint)
                 canvas.drawText(tx.category.take(18), colCat, currentY + 10f, regularPaint)
                 canvas.drawText(title.take(32), colTitle, currentY + 10f, regularPaint)
+                val attribution = tx.updatedBy.split(" — ", limit = 2)
                 canvas.drawText(
-                    (tx.updatedBy.ifBlank { "—" }).take(14),
+                    attribution.firstOrNull().orEmpty().take(18).ifBlank { "—" },
                     colBy,
-                    currentY + 10f,
-                    textPaint(7f, AndroidColor.rgb(100, 116, 139))
+                    currentY + 9f,
+                    textPaint(6.5f, AndroidColor.rgb(100, 116, 139))
                 )
+                attribution.getOrNull(1)?.let { role ->
+                    canvas.drawText(role.take(16), colBy, currentY + 18f, textPaint(6f, AndroidColor.rgb(100, 116, 139)))
+                }
 
                 val amountColor = when {
                     tx.isTransfer -> AndroidColor.rgb(100, 116, 139)
@@ -797,7 +801,7 @@ object ReportExporter {
                     currentY + 10f,
                     amountPaint
                 )
-                currentY += 14f
+                currentY += 22f
             }
             currentY += 6f
             canvas.drawText("${transactions.size} écriture(s) — virements internes signalés par ⇄", MARGIN, currentY, smallPaint)
@@ -876,7 +880,8 @@ object ReportExporter {
         periodLabel: String,
         columns: List<String>,
         rows: List<List<String>>,
-        workspaceId: String = "default"
+        workspaceId: String = "default",
+        generatedBy: String = ""
     ): File {
         require(columns.isNotEmpty()) { "Le rapport doit avoir au moins une colonne" }
         val cacheDir = reportDirectory(context, workspaceId)
@@ -908,7 +913,8 @@ object ReportExporter {
             canvas.drawText(profile.displayName.take(50), margin, 30f, subtitlePaint)
             canvas.drawText(title.take(60), margin, 57f, titlePaint)
             canvas.drawText("$periodLabel · Édité le ${dateFormat.format(Date())} · ${rows.size} ligne(s)", margin, 74f, subtitlePaint)
-            y = 94f
+            canvas.drawText("Établi par : ${generatedBy.ifBlank { "Non identifié" }}", margin, 88f, subtitlePaint)
+            y = 108f
             val colWidth = contentWidth / columns.size
             canvas.drawRoundRect(margin, y, PAGE_WIDTH - margin, y + rowHeight, 4f, 4f, bandPaint)
             columns.forEachIndexed { index, value ->
@@ -969,7 +975,8 @@ object ReportExporter {
         totalExpenseCents: Long,
         netBalanceCents: Long,
         profile: ChurchProfileEntity = ChurchProfileEntity(),
-        workspaceId: String = "default"
+        workspaceId: String = "default",
+        generatedBy: String = ""
     ): File {
         val cacheDir = reportDirectory(context, workspaceId)
         val csvFile = File(cacheDir, "Releve_${System.currentTimeMillis()}.csv")
@@ -986,9 +993,10 @@ object ReportExporter {
                 writer.append("# ${profile.displayName} — relevé des opérations\n")
                 writer.append("# Période: ").append(periodLabel).append("\n")
                 writer.append("# Édité le: ").append(fullDateTimeFormat.format(Date())).append("\n")
+                writer.append("# Établi par: ").append(generatedBy.ifBlank { "Non identifié" }).append("\n")
                 writer.append("# Devise: ").append(profile.currencyCode.ifBlank { "FCFA" }).append("\n\n")
 
-                writer.append("Date;Heure;Caisse;Nature;Catégorie;Intitulé;Montant;Virement interne;Justificatif;Note\n")
+                writer.append("Date;Heure;Caisse;Nature;Catégorie;Intitulé;Montant;Virement interne;Justificatif;Note;Modifié par\n")
 
                 for (tx in transactions) {
                     val dateStr = dateFormat.format(Date(tx.timestamp))
@@ -1013,7 +1021,8 @@ object ReportExporter {
                             amountRaw.toString(), // Montant numérique, pas une formule de texte
                             csvField(if (tx.isTransfer) "OUI" else "NON"),
                             csvField(if (tx.hasReceipt) "OUI" else "NON"),
-                            csvField(tx.note)
+                            csvField(tx.note),
+                            csvField(tx.updatedBy.ifBlank { "—" })
                         ).joinToString(";") + "\n"
                     )
                 }
@@ -1037,7 +1046,8 @@ object ReportExporter {
         totalExpenseCents: Long,
         netBalanceCents: Long,
         profile: ChurchProfileEntity = ChurchProfileEntity(),
-        workspaceId: String = "default"
+        workspaceId: String = "default",
+        generatedBy: String = ""
     ): File {
         val cacheDir = reportDirectory(context, workspaceId)
         val file = File(cacheDir, "Releve_${System.currentTimeMillis()}.xlsx")
@@ -1059,11 +1069,12 @@ object ReportExporter {
         fun numberCell(ref: String, value: Long): String = "<c r=\"$ref\"><v>$value</v></c>"
         val rows = mutableListOf<List<String>>()
         rows += listOf(profile.displayName, "Période", periodLabel).mapIndexed { i, value -> textCell("${columnName(i)}1", value) }
-        rows += listOf("Devise", profile.currencyCode.ifBlank { "FCFA" }).mapIndexed { i, value -> textCell("${columnName(i)}2", value) }
-        val headers = listOf("Date", "Heure", "Caisse", "Nature", "Catégorie", "Intitulé", "Montant (centimes)", "Virement interne", "Justificatif", "Note")
-        rows += headers.mapIndexed { i, value -> textCell("${columnName(i)}3", value) }
+        rows += listOf("Établi par", generatedBy.ifBlank { "Non identifié" }).mapIndexed { i, value -> textCell("${columnName(i)}2", value) }
+        rows += listOf("Devise", profile.currencyCode.ifBlank { "FCFA" }).mapIndexed { i, value -> textCell("${columnName(i)}3", value) }
+        val headers = listOf("Date", "Heure", "Caisse", "Nature", "Catégorie", "Intitulé", "Montant (centimes)", "Virement interne", "Justificatif", "Note", "Modifié par")
+        rows += headers.mapIndexed { i, value -> textCell("${columnName(i)}4", value) }
         transactions.sortedBy { it.timestamp }.forEachIndexed { txIndex, tx ->
-            val rowNumber = txIndex + 4
+            val rowNumber = txIndex + 5
             val kind = when {
                 tx.isTransfer -> "VIREMENT"
                 tx.type == TransactionType.INCOME -> "ENTRÉE"
@@ -1076,7 +1087,8 @@ object ReportExporter {
                 textCell("C$rowNumber", tx.cashRegisterName), textCell("D$rowNumber", kind),
                 textCell("E$rowNumber", tx.category), textCell("F$rowNumber", tx.title),
                 numberCell("G$rowNumber", signedAmount), textCell("H$rowNumber", if (tx.isTransfer) "Oui" else "Non"),
-                textCell("I$rowNumber", if (tx.hasReceipt) "Oui" else "Non"), textCell("J$rowNumber", tx.note)
+                textCell("I$rowNumber", if (tx.hasReceipt) "Oui" else "Non"), textCell("J$rowNumber", tx.note),
+                textCell("K$rowNumber", tx.updatedBy.ifBlank { "—" })
             )
             rows += cells
         }

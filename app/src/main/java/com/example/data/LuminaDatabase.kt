@@ -21,9 +21,10 @@ import kotlinx.coroutines.launch
         ChurchProfileEntity::class,
         MemberEntity::class,
         UserEntity::class,
-        ProjectEntity::class
+        ProjectEntity::class,
+        SyncContributorEntity::class
     ],
-    version = 10,
+    version = 11,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -36,6 +37,7 @@ abstract class LuminaDatabase : RoomDatabase() {
     abstract fun memberDao(): MemberDao
     abstract fun userDao(): UserDao
     abstract fun projectDao(): ProjectDao
+    abstract fun syncContributorDao(): SyncContributorDao
 
     companion object {
         private const val LEGACY_DATABASE_NAME = "lumina_financial.db"
@@ -60,7 +62,7 @@ abstract class LuminaDatabase : RoomDatabase() {
                     databaseName
                 )
                     .addCallback(LuminaDatabaseCallback(DATABASE_SCOPE, databaseName))
-                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
                     // Les installations anciennes conservent leurs migrations explicites.
                     .fallbackToDestructiveMigrationFrom(1, 2, 3, 4)
                     .build()
@@ -169,6 +171,23 @@ abstract class LuminaDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `church_profile` ADD COLUMN `churchUid` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("UPDATE `church_profile` SET `churchUid` = lower(hex(randomblob(16))) WHERE `churchUid` = ''")
+            }
+        }
+
+        /** Version 11 : carnet local des expéditeurs de fichiers d'échange, sans comptes/PIN. */
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sync_contributors` (" +
+                        "`uid` TEXT NOT NULL, " +
+                        "`displayName` TEXT NOT NULL, " +
+                        "`role` TEXT NOT NULL, " +
+                        "`sourceDeviceId` TEXT NOT NULL, " +
+                        "`firstSeenAt` INTEGER NOT NULL, " +
+                        "`lastSeenAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`uid`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_contributors_displayName` ON `sync_contributors` (`displayName`)")
             }
         }
 

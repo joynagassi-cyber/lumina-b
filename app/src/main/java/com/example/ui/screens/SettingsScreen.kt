@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Church
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Check
@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.runtime.remember
@@ -59,9 +60,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
-import com.example.R
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.FinancialUiState
@@ -70,14 +70,33 @@ import com.example.ui.designsystem.HeroCard
 import com.example.ui.designsystem.IconTile
 import com.example.ui.designsystem.ListRow
 import com.example.ui.designsystem.LuminaCard
+import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.designsystem.LuminaCardElevation
 import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.designsystem.StatTrio
 import com.example.ui.theme.ThemeMode
 import com.example.ui.theme.AccentPalettes
+import com.example.ui.theme.parseHexColor
 import com.example.util.AmountDisplayMode
 import com.example.util.CurrencyFormatter
 import androidx.compose.ui.graphics.Color
+
+
+private enum class SettingsPage(
+    val title: String,
+    val description: String,
+    val icon: ImageVector
+) {
+    IDENTITY("Identité de l'église", "Nom, logo, coordonnées et couleur des rapports.", Icons.Default.Church),
+    APPEARANCE("Apparence et thème", "Choisissez le mode clair ou sombre et la couleur de Lumina.", Icons.Default.LightMode),
+    CURRENCY("Devise", "Sélectionnez la devise utilisée dans les écritures et rapports.", Icons.Default.Payments),
+    AMOUNTS("Affichage des montants", "Adaptez la précision des chiffres à votre façon de lire les comptes.", Icons.Default.Description),
+    TOOLS("Outils de gestion", "Accédez aux catégories, aux exports et aux opérations courantes.", Icons.Default.Category),
+    SECURITY("Sécurité et confidentialité", "Protégez les accès et vérifiez le comportement des données locales.", Icons.Default.Security),
+    DEMO("Données de démonstration", "Essayez Lumina sans toucher aux données réelles de l'église.", Icons.Default.Visibility),
+    CLOSURE("Clôture des comptes", "Verrouillez ou rouvrez les périodes comptables avec précaution.", Icons.Default.Lock),
+    BACKUP("Fichier Lumina et sauvegardes", "Créez, partagez ou restaurez le dossier complet de l'église.", Icons.Default.Description)
+}
 
 @Composable
 fun SettingsScreen(
@@ -104,7 +123,9 @@ fun SettingsScreen(
     var showBackupDialog: Boolean by remember { mutableStateOf(false) }
     var showRestoreDialog: Boolean by remember { mutableStateOf(false) }
     var showFeatureGuide: Boolean by remember { mutableStateOf(false) }
+    var guideStep by remember { mutableIntStateOf(0) }
     var password: String by remember { mutableStateOf("") }
+    var selectedPage by remember { mutableStateOf<SettingsPage?>(null) }
 
     Column(
         modifier = modifier
@@ -113,114 +134,104 @@ fun SettingsScreen(
             .padding(horizontal = LuminaTokens.SpacingDefault, vertical = LuminaTokens.SpacingMedium)
             .testTag("settings_screen")
     ) {
-        // En-tête
-        Text(
-            text = "Paramètres",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.ExtraBold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = "Personnalisation et confidentialité",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
-
-        OutlinedButton(
-            onClick = { showFeatureGuide = true },
-            modifier = Modifier.fillMaxWidth().testTag("open_feature_guide")
-        ) {
-            Icon(Icons.Default.Description, contentDescription = null)
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(horizontalAlignment = Alignment.Start) {
-                Text("Guide des fonctionnalités", fontWeight = FontWeight.Bold)
-                Text("Comprendre chaque espace de Lumina", style = MaterialTheme.typography.labelSmall)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
-
-        // Carte Héro Moteur & Système (LuminaCard avec dégradé indigo électrique et ombrage)
-        LuminaCard(
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("settings_system_card"),
-            shape = LuminaTokens.ShapeHero,
-            elevation = LuminaCardElevation.HERO,
-            backgroundBrush = LuminaTokens.heroGradient(MaterialTheme.colorScheme.primary),
-            spotShadowColor = LuminaTokens.heroSpotShadow(MaterialTheme.colorScheme.primary),
-            ambientShadowColor = LuminaTokens.HeroAmbientShadow
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 18.dp, vertical = 16.dp)
+        if (selectedPage == null) {
+            // Hub de réglages : chaque thème ouvre sa propre page.
+            Text(
+                text = "Paramètres",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "Choisissez un réglage. Chaque page explique clairement ses options.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+            OutlinedButton(
+                onClick = { guideStep = 0; showFeatureGuide = true },
+                modifier = Modifier.fillMaxWidth().testTag("open_feature_guide")
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.lumina_brand_icon),
-                        contentDescription = "Icône Lumina",
-                        modifier = Modifier.size(46.dp).clip(LuminaTokens.ShapeTile)
-                    )
-
-                    Spacer(modifier = Modifier.width(LuminaTokens.SpacingDefault))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Lumina Comptabilité",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Fonctionne entièrement hors-ligne",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.80f)
-                        )
-                    }
-
-                    Surface(
-                        shape = LuminaTokens.ShapePill,
-                        color = Color.White.copy(alpha = 0.22f)
-                    ) {
-                        Text(
-                            text = uiState.profile.currencyCode.ifBlank { "XOF" },
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        )
-                    }
+                Icon(Icons.Default.Description, contentDescription = null)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(horizontalAlignment = Alignment.Start) {
+                    Text("Guide pas à pas", fontWeight = FontWeight.Bold)
+                    Text("Explications simples, page par page", style = MaterialTheme.typography.labelSmall)
                 }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Trio métriques système
-                StatTrio(
-                    item1Label = "Écritures",
-                    item1Value = "${uiState.periodTransactions.size}",
-                    item1Color = Color.White,
-                    item2Label = "Caisses",
-                    item2Value = "${uiState.cashRegisters.size}",
-                    item2Color = Color.White,
-                    item3Label = "Catégories",
-                    item3Value = "${uiState.categories.size}",
-                    item3Color = Color.White,
-                    containerColor = Color.White.copy(alpha = 0.14f),
-                    labelColor = Color.White.copy(alpha = 0.75f)
-                )
             }
+            Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+            LuminaCard(
+                modifier = Modifier.fillMaxWidth().testTag("settings_system_card"),
+                shape = LuminaTokens.ShapeHero,
+                elevation = LuminaCardElevation.HERO,
+                backgroundBrush = LuminaTokens.heroGradient(MaterialTheme.colorScheme.primary),
+                spotShadowColor = LuminaTokens.heroSpotShadow(MaterialTheme.colorScheme.primary),
+                ambientShadowColor = LuminaTokens.HeroAmbientShadow
+            ) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        LuminaBrandMark(
+                            modifier = Modifier.size(46.dp),
+                            backgroundColor = parseHexColor(uiState.profile.accentColorHex)
+                        )
+                        Spacer(modifier = Modifier.width(LuminaTokens.SpacingDefault))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Lumina Comptabilité", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                            Text("Fonctionne entièrement hors-ligne", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.80f))
+                        }
+                        Surface(shape = LuminaTokens.ShapePill, color = Color.White.copy(alpha = 0.22f)) {
+                            Text(
+                                text = uiState.profile.currencyCode.ifBlank { "XOF" },
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    StatTrio(
+                        item1Label = "Écritures", item1Value = "${uiState.periodTransactions.size}", item1Color = Color.White,
+                        item2Label = "Caisses", item2Value = "${uiState.cashRegisters.size}", item2Color = Color.White,
+                        item3Label = "Catégories", item3Value = "${uiState.categories.size}", item3Color = Color.White,
+                        containerColor = Color.White.copy(alpha = 0.14f), labelColor = Color.White.copy(alpha = 0.75f)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+            GroupedCard(title = "Choisissez une page") {
+                SettingsPage.values().forEachIndexed { index, page ->
+                    ListRow(
+                        title = page.title,
+                        subtitle = page.description,
+                        icon = page.icon,
+                        iconTileColor = MaterialTheme.colorScheme.primaryContainer,
+                        iconTint = MaterialTheme.colorScheme.primary,
+                        onClick = { selectedPage = page },
+                        showDivider = index < SettingsPage.values().lastIndex,
+                        modifier = Modifier.testTag("settings_page_${page.name.lowercase()}")
+                    )
+                }
+            }
+        } else {
+            TextButton(onClick = { selectedPage = null }, modifier = Modifier.testTag("settings_back_to_pages")) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Tous les paramètres")
+            }
+            Text(
+                selectedPage!!.title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(selectedPage!!.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
         }
-
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        if (selectedPage == SettingsPage.IDENTITY) {
         // SECTION 0 : IDENTITÉ DE L'ÉGLISE
         GroupedCard(title = "Identité de l'église") {
             ListRow(
@@ -239,6 +250,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.APPEARANCE) {
         // SECTION 1 : APPARENCE & THÈME (GroupedCard avec IconTiles et Inset dividers)
         GroupedCard(title = "Apparence & Thème") {
             // Option Système
@@ -345,6 +359,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.CURRENCY) {
         // SECTION 2 : DEVISE UNIQUE DÉTERMINISTE
         GroupedCard(title = "Devise Comptable") {
             ListRow(
@@ -384,6 +401,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.AMOUNTS) {
         // SECTION 3 : MODES D'AFFICHAGE DE L'ARGENT
         GroupedCard(title = "Affichage des Chiffres") {
             AmountDisplayMode.values().forEachIndexed { index, mode ->
@@ -415,6 +435,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.TOOLS) {
         // SECTION 4 : OUTILS & GESTION
         GroupedCard(title = "Outils & Trésorerie") {
             ListRow(
@@ -468,6 +491,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.SECURITY) {
         // SECTION 5 : SÉCURITÉ & DÉTERMINISME
         GroupedCard(title = "Sécurité & Confidentialité") {
             ListRow(
@@ -482,6 +508,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.DEMO) {
         // SECTION 6 : DONNÉES D'ESSAI
         GroupedCard(title = "Données d'essai") {
             ListRow(
@@ -512,6 +541,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.CLOSURE) {
         // SECTION 7 : CLÔTURE DES COMPTES
         GroupedCard(title = "Clôture des comptes") {
             ListRow(
@@ -559,6 +591,9 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 
+        }
+
+        if (selectedPage == SettingsPage.BACKUP) {
         // SECTION 8 : SAUVEGARDE & RESTAURATION
         GroupedCard(title = "Sauvegarde & restauration") {
             ListRow(
@@ -620,40 +655,77 @@ fun SettingsScreen(
             }
         }
 
+        }
+
         Spacer(modifier = Modifier.height(80.dp))
     }
 
     if (showFeatureGuide) {
         val guideTopics = listOf(
-            "Tableau de bord" to "Consultez les entrées, les sorties, le solde et les tendances financières du dossier affiché.",
-            "Historique" to "Retrouvez les opérations et utilisez les menus de filtres pour choisir période, nature, caisse, catégorie, montant et ordre de tri.",
-            "Caisses" to "Suivez séparément les soldes des différentes caisses et enregistrez les transferts internes.",
-            "Budgets" to "Définissez des prévisions par catégorie et par mois, puis comparez-les aux dépenses enregistrées.",
-            "Projets, campagnes, événements et collectes" to "Suivez un objectif distinct du budget et affectez-y les écritures concernées.",
-            "Membres" to "Consultez et gérez le registre des membres de l'église.",
-            "Rapports et exports" to "Générez le bilan global ou les rapports PDF dédiés aux membres, aux budgets et à l'historique. L'Excel (.xlsx) est un classeur ; le CSV est un fichier texte.",
-            "Paramètres" to "Personnalisez l'apparence, la couleur, la devise et l'affichage des montants ; gérez aussi l'identité de l'église et les sauvegardes.",
-            "Démonstration" to "Explorez des données entièrement fictives en lecture seule. Elles ne sont pas ajoutées au dossier réel."
+            "1. Se repérer dans Lumina" to "Le bouton ☰ ouvre le menu. Appuyez sur une rubrique pour changer de page. La flèche Retour de votre téléphone revient à l'écran précédent. Les réglages sont séparés par thèmes.",
+            "2. Lire le tableau de bord" to "Choisissez d'abord une période en haut de la page. Les totaux et graphiques se recalculent pour cette période. Touchez une caisse pour voir son solde, ou choisissez « Toutes » pour revenir au total.",
+            "3. Ajouter une écriture" to "Touchez le bouton +. Choisissez une entrée d'argent ou une dépense, puis indiquez le montant, la date, la catégorie et la caisse. Vérifiez le résumé avant d'enregistrer. Vous pouvez joindre une photo du reçu.",
+            "4. Gérer les caisses" to "Ouvrez « Caisses » pour créer une caisse, noter son solde de départ et consulter les mouvements. Un transfert entre deux caisses ne doit pas être saisi comme un revenu ou une dépense.",
+            "5. Préparer un budget" to "Dans « Budgets », choisissez un mois et une catégorie, puis saisissez le montant prévu. Le suivi compare ensuite les dépenses déjà enregistrées à ce montant.",
+            "6. Retrouver une opération" to "Dans l'historique, utilisez les filtres de date, catégorie, caisse ou type. Appuyez sur « Effacer les filtres » pour retrouver la liste entière. Les corrections et annulations restent traçables.",
+            "7. Gérer les membres" to "Ouvrez « Membres », appuyez sur Ajouter et remplissez le prénom et le nom. Les coordonnées et autres renseignements sont facultatifs. Vérifiez la fiche avant de la valider.",
+            "8. Suivre un projet" to "Créez un projet, une collecte ou un événement avec son objectif. Lors de la saisie d'une opération liée, choisissez ce projet pour que son avancement soit correctement calculé.",
+            "9. Créer les accès de l'équipe" to "Chaque personne doit avoir son propre nom et son code PIN de 4 à 6 chiffres sur son appareil. Ne partagez pas votre PIN. Les comptes locaux et les PIN ne sont jamais inclus dans un fichier Lumina partagé.",
+            "10. Créer et partager un fichier Lumina" to "Dans Paramètres → Fichier Lumina, créez le ZIP complet. Il contient le profil de l'église, le logo, les réglages, les écritures, budgets, caisses, projets, membres et justificatifs disponibles. Un mot de passe est facultatif, mais recommandé pour l'envoi.",
+            "11. Rejoindre avec un fichier" to "Sur l'appareil neuf, choisissez « J'ai un fichier Lumina ». Sélectionnez le ZIP et saisissez son mot de passe si demandé. L'import est refusé si le dossier contient déjà des données. Ensuite, créez votre propre prénom, nom et PIN.",
+            "12. Essayer sans risque" to "Le mode démonstration contient des exemples temporaires en lecture seule. Il ne modifie pas le vrai dossier. Quittez la démonstration pour revenir à l'église."
         )
+        val safeStep = guideStep.coerceIn(0, guideTopics.lastIndex)
+        val (topicTitle, topicBody) = guideTopics[safeStep]
         AlertDialog(
             onDismissRequest = { showFeatureGuide = false },
             title = { Text("Guide de Lumina") },
             text = {
                 Column(
-                    modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier.heightIn(max = 440.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    guideTopics.forEach { (title, description) ->
-                        Column {
-                            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Spacer(modifier = Modifier.height(3.dp))
-                            Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "Étape ${safeStep + 1} sur ${guideTopics.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        repeat(guideTopics.size) { index ->
+                            Box(
+                                Modifier.weight(1f).height(4.dp).clip(LuminaTokens.ShapePill)
+                                    .background(if (index <= safeStep) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                            )
                         }
+                    }
+                    Text(topicTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        topicBody,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        lineHeight = 24.sp
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(enabled = safeStep > 0, onClick = { guideStep = (safeStep - 1).coerceAtLeast(0) }) {
+                            Text("Précédent")
+                        }
+                        TextButton(
+                            onClick = {
+                                if (safeStep < guideTopics.lastIndex) guideStep = safeStep + 1
+                                else showFeatureGuide = false
+                            }
+                        ) { Text(if (safeStep == guideTopics.lastIndex) "Terminer" else "Suivant") }
                     }
                 }
             },
-            confirmButton = {
-                TextButton(onClick = { showFeatureGuide = false }) { Text("Fermer") }
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showFeatureGuide = false }) { Text("Fermer le guide") }
             }
         )
     }
