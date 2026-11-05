@@ -97,6 +97,7 @@ fun TeamSyncScreen(
     var cloudInviteCode by remember { mutableStateOf("") }
     var cloudInviteInput by remember { mutableStateOf("") }
     var cloudInviteMessage by remember { mutableStateOf("") }
+    var churchInvitationMessage by remember { mutableStateOf("") }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -395,13 +396,35 @@ fun TeamSyncScreen(
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Invitation légère pour un nouveau membre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                        "Ce petit fichier contient le nom, l'identité visuelle et l'identifiant de l'église, sans finances, écritures, membres ni comptes/PIN. " +
-                        "Il est chiffré avec la phrase ci-dessus : transmettez-la séparément. La personne l'importe pendant l'accueil, choisit son rôle, crée son profil et son PIN, puis importe séparément un fichier d'échange si elle doit recevoir les données.",
+                    "Ce petit fichier contient le nom, l'identité visuelle et l'identifiant de l'église, sans finances, écritures, membres ni comptes/PIN. Il est chiffré : la phrase de passe doit être transmise séparément.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = { passphrase = it; churchInvitationMessage = "" },
+                    label = { Text("Phrase de passe pour l'invitation (6 caractères minimum)") },
+                    supportingText = { Text("Utilisez la même phrase lors de l'import sur le nouvel appareil.") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth().testTag("invitation_passphrase")
+                )
+                if (churchInvitationMessage.isNotBlank()) {
+                    Text(churchInvitationMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else if (!uiState.canWrite) {
+                    Text("Ce compte est en lecture seule : un utilisateur autorisé à modifier le dossier doit créer l'invitation.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else if (passphrase.length < 6) {
+                    Text("Saisissez une phrase d'au moins 6 caractères : elle est nécessaire pour créer le fichier chiffré.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedButton(
-                    onClick = { onCreateInvitation(context, passphrase) { file -> onShareFile(context, file) } },
-                    enabled = uiState.canWrite && passphrase.length >= 6,
+                    onClick = {
+                        when {
+                            !uiState.canWrite -> churchInvitationMessage = "Création impossible en lecture seule. Connectez-vous avec un rôle autorisé à modifier ce dossier."
+                            passphrase.length < 6 -> churchInvitationMessage = "La phrase de passe doit contenir au moins 6 caractères."
+                            else -> onCreateInvitation(context, passphrase) { file -> onShareFile(context, file) }
+                        }
+                    },
+                    enabled = !uiState.isDemoMode,
                     modifier = Modifier.fillMaxWidth().testTag("create_church_invitation")
                 ) {
                     Icon(Icons.Default.Groups, contentDescription = null, modifier = Modifier.size(18.dp))

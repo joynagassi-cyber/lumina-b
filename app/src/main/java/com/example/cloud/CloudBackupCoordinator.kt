@@ -34,9 +34,8 @@ object CloudBackupCoordinator {
                     throw IllegalStateException("Cet appareil doit d'abord restaurer la sauvegarde partagée avant de pouvoir publier.")
                 }
                 CloudBackupLocalStore.setEnabled(app, repository.workspaceId, true)
-                publishCurrent(app, repository, client, existing)
-                CloudBackupLocalStore.setStatus(app, repository.workspaceId, "Sauvegarde cloud activée et vérifiée.")
-                return@withWorkspaceLock "Sauvegarde cloud activée et à jour."
+                CloudBackupLocalStore.setStatus(app, repository.workspaceId, "Sauvegarde cloud activée. La prochaine copie sera envoyée en arrière-plan.")
+                return@withWorkspaceLock "Sauvegarde cloud activée. La première mise à jour est programmée en arrière-plan."
             }
 
             val churchId = client.ensureWorkspace(
@@ -51,22 +50,61 @@ object CloudBackupCoordinator {
                 throw IllegalStateException("Une sauvegarde de cette église existe déjà. Restaurez-la avant de publier depuis cet appareil.")
             }
             CloudBackupLocalStore.setLink(app, repository.workspaceId, churchId, 0L, enabled = true)
-            publishCurrent(app, repository, client, CloudBackupLocalStore.link(app, repository.workspaceId)!!)
-            CloudBackupLocalStore.setStatus(app, repository.workspaceId, "Première sauvegarde cloud envoyée.")
-            "Sauvegarde cloud activée pour ${profile.displayName}."
+            CloudBackupLocalStore.setStatus(app, repository.workspaceId, "Sauvegarde cloud activée. La première copie est programmée en arrière-plan.")
+            "Sauvegarde cloud activée pour ${profile.displayName}. La première copie démarre en arrière-plan."
             }
         }
 
     /** Upload only when enabled. Conflicts are surfaced and never auto-merged or overwritten. */
     suspend fun publishIfEnabled(context: Context, repository: TransactionRepository): Boolean =
         withContext(Dispatchers.IO) {
-            CloudBackupLocks.withWorkspaceLock(repository.workspaceId) {
-                val app = context.applicationContext
-                val link = CloudBackupLocalStore.link(app, repository.workspaceId) ?: return@withWorkspaceLock false
-                if (!link.enabled) return@withWorkspaceLock false
-                publishCurrent(app, repository, SupabaseCloudClient(app), link)
-                true
+            val app = context.applicationContext
+            val workspaceId = repository.workspaceId
+            CloudBackupLocalStore.setProgress(workspaceId, 2, "Préparation de la sauvegarde…")
+            try {
+                val didPublish = CloudBackupLocks.withWorkspaceLock(workspaceId) {
+                    val link = CloudBackupLocalStore.link(app, workspaceId)
+                        ?: return@withWorkspaceLock false
+                    if (!link.enabled) return@withWorkspaceLock false
+                    publishCurrent(app, repository, SupabaseCloudClient(app), link)
+                    true
+                }
+                CloudBackupLocalStore.finishProgress(
+                    workspaceId,
+                    if (didPublish) "Sauvegarde cloud terminée" else "Sauvegarde cloud non activée"
+                )
+                didPublish
+            } catch (error: Exception) {
+                CloudBackupLocalStore.clearProgress(workspaceId)
+                throw error
             }
+        }
+
+    /** Read the latest manifest and archive, checking its checksum and Lumina format without restoring it. */
+    suspend fun verifyLatest(context: Context, repository: TransactionRepository): String =
+        withContext(Dispatchers.IO) {
+            val app = context.applicationContext
+            val link = CloudBackupLocalStore.link(app, repository.workspaceId)
+                ?: throw IllegalStateException("Activez d'abord la sauvegarde cloud sur cet appareil.")
+            val client = SupabaseCloudClient(app)
+            client.ensureAuthenticated()
+            val head = client.currentHead(link.churchId)
+                ?: throw IllegalStateException("Aucune sauvegarde n'existe encore dans le cloud. Activez-la et attendez la première copie.")
+            require(head.byteSize in 1..MAX_CLOUD_BACKUP_BYTES) { "La taille de la sauvegarde cloud est invalide." }
+            val bytes = client.downloadObject(head.objectPath, MAX_CLOUD_BACKUP_BYTES)
+            require(sha256(bytes) == head.sha256) {
+                "La vérification a échoué : l'empreinte de la copie téléchargée est incorrecte. Aucune restauration n'a été effectuée."
+            }
+            val archived = BackupService.inspectCloudArchive(bytes)
+            val localChurchUid = repository.getProfile()?.churchUid
+            if (!localChurchUid.isNullOrBlank() && !archived.profile?.churchUid.isNullOrBlank()) {
+                require(archived.profile?.churchUid == localChurchUid) {
+                    "La copie vérifiée appartient à une autre identité d'église. Aucune donnée n'a été modifiée."
+                }
+            }
+            val message = "Vérification réussie : copie cloud lisible, empreinte valide, version ${head.generation} (${archived.transactionCount} écritures, ${archived.memberCount} membres)."
+            CloudBackupLocalStore.setStatus(app, repository.workspaceId, message)
+            message
         }
 
     suspend fun createInvite(context: Context, repository: TransactionRepository, role: String = "editor"): String =
@@ -147,16 +185,23 @@ object CloudBackupCoordinator {
         }
         val fingerprint = BackupService.cloudContentFingerprint(context, repository)
         if (CloudBackupLocalStore.lastFingerprint(context, repository.workspaceId) == fingerprint) {
+            CloudBackupLocalStore.setProgress(repository.workspaceId, 100, "Aucune modification : copie cloud déjà à jour.")
             CloudBackupLocalStore.setStatus(context, repository.workspaceId, "Sauvegarde cloud à jour.")
             return
         }
+        CloudBackupLocalStore.setProgress(repository.workspaceId, 8, "Préparation des données et justificatifs…")
         val bytes = BackupService.createCloudArchive(context, repository)
         require(bytes.size.toLong() in 1..MAX_CLOUD_BACKUP_BYTES) {
             "La sauvegarde dépasse la limite de stockage cloud."
         }
         val checksum = sha256(bytes)
         val objectPath = "churches/${link.churchId}/${UUID.randomUUID()}.lumina"
-        client.uploadObject(objectPath, bytes)
+        CloudBackupLocalStore.setProgress(repository.workspaceId, 12, "Envoi de la sauvegarde…")
+        client.uploadObject(objectPath, bytes) { sent, total ->
+            val percent = if (total <= 0L) 85 else 12 + ((sent * 73L / total).toInt())
+            CloudBackupLocalStore.setProgress(repository.workspaceId, percent, "Envoi de la sauvegarde…")
+        }
+        CloudBackupLocalStore.setProgress(repository.workspaceId, 92, "Validation de la copie dans le cloud…")
         val latestLocalLink = CloudBackupLocalStore.link(context, repository.workspaceId)
         if (latestLocalLink == null || !latestLocalLink.enabled || latestLocalLink.generation != link.generation) {
             throw IllegalStateException("La liaison cloud a changé; la publication a été annulée pour protéger les données.")

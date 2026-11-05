@@ -7,6 +7,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
+import okio.BufferedSink
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
@@ -90,7 +92,7 @@ class SupabaseCloudClient(context: Context) {
         )
     }
 
-    suspend fun uploadObject(path: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
+    suspend fun uploadObject(path: String, bytes: ByteArray, onProgress: (Long, Long) -> Unit = { _, _ -> }) = withContext(Dispatchers.IO) {
         ensureAuthenticated()
         require(path.startsWith("churches/") && path.endsWith(".lumina"))
         request(
@@ -98,7 +100,8 @@ class SupabaseCloudClient(context: Context) {
             path = "/storage/v1/object/lumina-backups/${path.split('/').joinToString("/") { encode(it) }}",
             body = bytes,
             contentType = "application/octet-stream",
-            extraHeaders = mapOf("x-upsert" to "false")
+            extraHeaders = mapOf("x-upsert" to "false"),
+            onUploadProgress = onProgress
         )
     }
 
@@ -202,8 +205,9 @@ class SupabaseCloudClient(context: Context) {
         body: ByteArray? = null,
         contentType: String = "application/json",
         includeBearer: Boolean = true,
-        extraHeaders: Map<String, String> = emptyMap()
-    ): String = String(requestBytes(method, path, body, contentType, includeBearer, extraHeaders), Charsets.UTF_8)
+        extraHeaders: Map<String, String> = emptyMap(),
+        onUploadProgress: ((Long, Long) -> Unit)? = null
+    ): String = String(requestBytes(method, path, body, contentType, includeBearer, extraHeaders, onUploadProgress), Charsets.UTF_8)
 
     private fun requestBytes(
         method: String,
@@ -211,7 +215,8 @@ class SupabaseCloudClient(context: Context) {
         body: ByteArray? = null,
         contentType: String = "application/json",
         includeBearer: Boolean = true,
-        extraHeaders: Map<String, String> = emptyMap()
+        extraHeaders: Map<String, String> = emptyMap(),
+        onUploadProgress: ((Long, Long) -> Unit)? = null
     ): ByteArray {
         requireConfigured()
         val builder = Request.Builder()
@@ -221,7 +226,27 @@ class SupabaseCloudClient(context: Context) {
         if (includeBearer) builder.header("Authorization", "Bearer ${blockingAccessToken()}")
         body?.let { builder.header("Content-Type", contentType) }
         extraHeaders.forEach { (key, value) -> builder.header(key, value) }
-        val requestBody = body?.toRequestBody(contentType.toMediaType())
+        val requestBody = body?.let { payload ->
+            val mediaType = contentType.toMediaType()
+            if (onUploadProgress == null) {
+                payload.toRequestBody(mediaType)
+            } else {
+                object : RequestBody() {
+                    override fun contentType() = mediaType
+                    override fun contentLength() = payload.size.toLong()
+                    override fun writeTo(sink: BufferedSink) {
+                        val chunkSize = 32 * 1024
+                        var sent = 0
+                        while (sent < payload.size) {
+                            val count = minOf(chunkSize, payload.size - sent)
+                            sink.write(payload, sent, count)
+                            sent += count
+                            onUploadProgress(sent.toLong(), payload.size.toLong())
+                        }
+                    }
+                }
+            }
+        }
         val response = http.newCall(builder.method(method, requestBody).build()).execute()
         response.use {
             val payload = it.body?.bytes() ?: ByteArray(0)

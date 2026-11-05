@@ -43,13 +43,17 @@ object CloudBackupScheduler {
             once
         )
 
-        val periodic = PeriodicWorkRequestBuilder<CloudBackupWorker>(15, TimeUnit.MINUTES)
+        val workManager = WorkManager.getInstance(app)
+        // Remove the legacy 15-minute schedule once; the daily cadence produces attempts
+        // on distinct weekdays while content fingerprints suppress unchanged uploads.
+        workManager.cancelUniqueWork("lumina-cloud-backup-periodic-$safeId")
+        val periodic = PeriodicWorkRequestBuilder<CloudBackupWorker>(24, TimeUnit.HOURS)
             .setInputData(input)
             .setConstraints(constraints)
             .build()
-        WorkManager.getInstance(app).enqueueUniquePeriodicWork(
-            "lumina-cloud-backup-periodic-$safeId",
-            ExistingPeriodicWorkPolicy.UPDATE,
+        workManager.enqueueUniquePeriodicWork(
+            "lumina-cloud-backup-daily-$safeId",
+            ExistingPeriodicWorkPolicy.KEEP,
             periodic
         )
     }
@@ -60,6 +64,8 @@ object CloudBackupScheduler {
             .cancelUniqueWork("lumina-cloud-backup-once-$safeId")
         WorkManager.getInstance(context.applicationContext)
             .cancelUniqueWork("lumina-cloud-backup-periodic-$safeId")
+        WorkManager.getInstance(context.applicationContext)
+            .cancelUniqueWork("lumina-cloud-backup-daily-$safeId")
     }
 }
 

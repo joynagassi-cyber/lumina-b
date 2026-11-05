@@ -1095,6 +1095,14 @@ class FinancialViewModel(
         }
     }
 
+    fun checkCloudBackup(context: Context, onResult: (Result<String>) -> Unit) {
+        viewModelScope.launch {
+            onResult(runCatching {
+                com.example.cloud.CloudBackupCoordinator.verifyLatest(context.applicationContext, repository)
+            })
+        }
+    }
+
     fun createCloudInvite(context: Context, onResult: (Result<String>) -> Unit) {
         viewModelScope.launch {
             if (!ensurePermission()) {

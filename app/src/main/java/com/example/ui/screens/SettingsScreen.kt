@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -115,7 +116,9 @@ fun SettingsScreen(
     onRequestRestore: (String) -> Unit = {},
     onRestoreAuto: () -> Unit = {},
     onEnableCloudBackup: () -> Unit = {},
+    onCheckCloudBackup: () -> Unit = {},
     onRestoreCloudBackup: () -> Unit = {},
+    cloudProgress: com.example.cloud.CloudBackupLocalStore.BackupProgress? = null,
     cloudBackupStatus: String = "",
     lastAutoBackupLabel: String = "",
     modifier: Modifier = Modifier
@@ -663,28 +666,55 @@ fun SettingsScreen(
             Text("Copie cloud partagée", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 cloudBackupStatus.ifBlank {
-                    "Les sauvegardes restent privées dans l'espace cloud de l'église. L'activation crée une première copie; les mises à jour se font discrètement à l'ouverture avec Internet."
+                    "Activez la copie partagée une seule fois. Lumina tentera ensuite une sauvegarde quotidienne (au moins trois jours distincts par semaine) quand Internet est disponible."
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "Le fournisseur chiffre les données au repos, mais peut techniquement accéder au contenu. Une restauration remplace les données du dossier; une copie locale de sécurité est conservée avant le remplacement.",
+                "L'activation programme les envois; « Vérifier » télécharge et contrôle la dernière copie sans restaurer ni modifier les données. Les envois peuvent être retardés par Android ou l'absence de réseau. Le fournisseur chiffre les données au repos, mais peut techniquement accéder au contenu.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (cloudProgress != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().testTag("cloud_backup_progress"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        if (cloudProgress.isRunning) "Sauvegarde en cours — ${cloudProgress.percent}%" else cloudProgress.message,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    LinearProgressIndicator(
+                        progress = { cloudProgress.percent / 100f },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    if (cloudProgress.isRunning) {
+                        Text(cloudProgress.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onEnableCloudBackup,
                     enabled = uiState.canWrite && !uiState.isDemoMode,
                     modifier = Modifier.weight(1f).testTag("enable_cloud_backup")
-                ) { Text("Activer / vérifier") }
+                ) { Text("Activer la sauvegarde") }
                 OutlinedButton(
-                    onClick = { showCloudRestoreConfirm = true },
+                    onClick = onCheckCloudBackup,
                     enabled = !uiState.isDemoMode,
-                    modifier = Modifier.weight(1f).testTag("restore_cloud_backup")
-                ) { Text("Restaurer le cloud") }
+                    modifier = Modifier.weight(1f).testTag("check_cloud_backup")
+                ) { Text("Vérifier la copie") }
             }
+            OutlinedButton(
+                onClick = { showCloudRestoreConfirm = true },
+                enabled = !uiState.isDemoMode,
+                modifier = Modifier.fillMaxWidth().testTag("restore_cloud_backup")
+            ) { Text("Restaurer le cloud") }
         }
 
         }

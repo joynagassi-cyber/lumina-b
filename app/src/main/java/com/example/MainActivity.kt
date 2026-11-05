@@ -63,6 +63,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -231,6 +232,10 @@ fun LuminaApp(
     var cloudBackupStatus by remember(activeWorkspace.id) {
         mutableStateOf(com.example.cloud.CloudBackupLocalStore.status(context, activeWorkspace.id))
     }
+    val cloudProgressFlow = remember(activeWorkspace.id) {
+        com.example.cloud.CloudBackupLocalStore.progressFlow(activeWorkspace.id)
+    }
+    val cloudProgress by cloudProgressFlow.collectAsStateWithLifecycle(initialValue = null)
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -687,6 +692,7 @@ fun LuminaApp(
             contentWindowInsets = WindowInsets.safeDrawing,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
+                Column {
                 CenterAlignedTopAppBar(
                     title = {
                         Text(
@@ -765,6 +771,36 @@ fun LuminaApp(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 )
+                if (!uiState.isDemoMode) cloudProgress?.takeIf { it.isRunning }?.let { progress ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Sauvegarde cloud en cours — ${progress.percent}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        LinearProgressIndicator(
+                            progress = { progress.percent / 100f },
+                            modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f)
+                        )
+                        Text(
+                            progress.message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                }
             },
             bottomBar = {
                 Box(
@@ -1062,16 +1098,27 @@ fun LuminaApp(
                         },
                         onEnableCloudBackup = {
                             viewModel.enableCloudBackup(context) { result ->
-                                com.example.cloud.CloudBackupScheduler.schedule(
-                                    context,
-                                    activeWorkspace.id,
-                                    activeWorkspace.databaseName
-                                )
                                 result.onSuccess { message ->
+                                    com.example.cloud.CloudBackupScheduler.schedule(
+                                        context,
+                                        activeWorkspace.id,
+                                        activeWorkspace.databaseName
+                                    )
                                     cloudBackupStatus = message
                                     scope.launch { snackbarHostState.showSnackbar(message) }
                                 }.onFailure { error ->
                                     cloudBackupStatus = error.message ?: "Sauvegarde cloud indisponible"
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }
+                            }
+                        },
+                        onCheckCloudBackup = {
+                            viewModel.checkCloudBackup(context) { result ->
+                                result.onSuccess { message ->
+                                    cloudBackupStatus = message
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }.onFailure { error ->
+                                    cloudBackupStatus = error.message ?: "Vérification cloud impossible"
                                     scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
                                 }
                             }
@@ -1087,6 +1134,7 @@ fun LuminaApp(
                                 }
                             }
                         },
+                        cloudProgress = cloudProgress,
                         cloudBackupStatus = cloudBackupStatus,
                         lastAutoBackupLabel = if (uiState.isDemoMode) "" else lastAutoBackupLabel
                     )

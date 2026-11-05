@@ -187,6 +187,14 @@ object BackupService {
         digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 
+    /** Validate an archive's format and contents without changing the local database. */
+    internal suspend fun inspectCloudArchive(bytes: ByteArray): BackupSnapshot = withContext(Dispatchers.IO) {
+        require(bytes.size in 1..MAX_INPUT_BYTES) { "La sauvegarde cloud est vide ou trop volumineuse." }
+        val payload = decodePayload(bytes, password = "")
+        require(payload.isArchive) { "Format de sauvegarde cloud non pris en charge." }
+        payload.snapshot.copy(users = emptyList())
+    }
+
     /** Restore only a checked Lumina archive; device accounts remain local and unchanged. */
     internal suspend fun restoreCloudArchive(
         context: Context,

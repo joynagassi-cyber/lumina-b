@@ -1,6 +1,14 @@
 package com.example.cloud
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -22,6 +30,35 @@ object CloudBackupLocks {
 
 /** Per-local-workspace cloud link and optimistic concurrency checkpoint. */
 object CloudBackupLocalStore {
+    data class BackupProgress(val isRunning: Boolean, val percent: Int, val message: String)
+
+    private val progressState = MutableStateFlow<Map<String, BackupProgress>>(emptyMap())
+    private val progressScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    fun progressFlow(workspaceId: String): Flow<BackupProgress?> =
+        progressState.map { it[workspaceId] }
+
+    fun setProgress(workspaceId: String, percent: Int, message: String) {
+        progressState.value = progressState.value + (
+            workspaceId to BackupProgress(true, percent.coerceIn(0, 100), message.take(160))
+        )
+    }
+
+    fun finishProgress(workspaceId: String, message: String) {
+        val completed = BackupProgress(false, 100, message.take(160))
+        progressState.value = progressState.value + (workspaceId to completed)
+        progressScope.launch {
+            delay(3_500)
+            if (progressState.value[workspaceId] == completed) {
+                progressState.value = progressState.value - workspaceId
+            }
+        }
+    }
+
+    fun clearProgress(workspaceId: String) {
+        progressState.value = progressState.value - workspaceId
+    }
+
     data class Link(val churchId: String, val generation: Long, val enabled: Boolean)
 
     private fun preferences(context: Context) =
