@@ -1,6 +1,6 @@
 # Intégration continue — installation des workflows
 
-Les 3 workflows sont **prêts à l'emploi** mais sont stockés ici (`ci/workflows/`) et non dans
+Les workflows sont **prêts à l'emploi** mais sont stockés ici (`ci/workflows/`) et non dans
 `.github/workflows/` : le jeton GitHub utilisé par l'agent du dépôt n'a pas la permission
 `workflows`, ce qui bloque tout push de fichier dans `.github/workflows/`.
 
@@ -27,7 +27,9 @@ Ouvrir chaque lien, coller le contenu du fichier correspondant de `ci/workflows/
 - <https://github.com/joynagassi-cyber/lumina-b/new/main?filename=.github/workflows/bootstrap-keystore.yml>
 
 Puis onglet **Actions** → « Android CI » → **Run workflow** pour lancer le premier build,
-ou pousser n'importe quel commit.
+ou pousser n'importe quel commit. Le keepalive planifié doit être installé sur la branche par défaut
+(`main`) pour que GitHub exécute son calendrier; après installation, lancez « Supabase Free keepalive »
+manuellement une fois pour vérifier l'accès au RPC.
 
 ## Option 3 — reconnecter GitHub
 
@@ -41,6 +43,7 @@ l'agent peut installer les fichiers lui-même : `bash scripts/install-ci.sh --pu
 | `android-ci.yml` | push / PR / manuel | tests unitaires + APK debug en artifact |
 | `android-release.yml` | tag `v*` / manuel | APK + AAB signés, vérifiés avec `apksigner`, GitHub Release |
 | `bootstrap-keystore.yml` | manuel, une seule fois | génère le keystore de signature et le publie en artifact |
+| `supabase-keepalive.yml` | lundi + jeudi (UTC) / manuel | exécute un RPC SQL sans donnée pour réduire le risque de pause du projet Free |
 
 Actions utilisées (versions vérifiées comme existantes, entrées compatibles) :
 `actions/checkout@v7`, `actions/setup-java@v6`, `actions/upload-artifact@v7`,

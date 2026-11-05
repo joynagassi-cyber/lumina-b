@@ -1,0 +1,41 @@
+name: Supabase Free keepalive
+
+on:
+  # Validate the endpoint when this workflow is introduced or changed.
+  push:
+    paths:
+      - '.github/workflows/supabase-keepalive.yml'
+  # Two database checks each week (UTC): comfortably inside the Free inactivity window.
+  schedule:
+    - cron: '17 8 * * 1,4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-free-keepalive
+  cancel-in-progress: true
+
+jobs:
+  keepalive:
+    name: Run a harmless database check
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      SUPABASE_URL: https://ybfebchvsgbgpeesrqld.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_U71rafe7hFkDcF6P-uFjgQ_WDGaHMY8
+    steps:
+      - name: Execute the restricted keepalive RPC
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(curl --fail --silent --show-error --max-time 25 \
+            --retry 2 --retry-all-errors \
+            --request POST "$SUPABASE_URL/rest/v1/rpc/github_keepalive" \
+            --header "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            --header "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" \
+            --header 'Content-Type: application/json' \
+            --data '{}')"
+          echo "$response" | jq -e '.ok == true' >/dev/null
+          echo "Supabase keepalive succeeded: $(echo "$response" | jq -r '.checked_at')"

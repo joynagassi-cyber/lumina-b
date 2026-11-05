@@ -12,9 +12,15 @@
 
 Les personnes ont des comptes cloud individuels, puis rejoignent le même espace d'église avec une invitation. Tous les membres lisent le même pointeur de sauvegarde courant. Les objets et versions précédentes sont immuables; il n'y a pas de règle client de suppression. Un éditeur peut publier une nouvelle version seulement si la génération qu'il a lue est toujours courante : une mise à jour concurrente est refusée au lieu d'écraser silencieusement le travail d'un autre appareil. Les rôles d'invitation disponibles sont `editor` et `viewer`.
 
-Les règles RLS limitent les données et les objets aux membres de l'église concernée; `service_role` n'est pas requis dans l'application. Le SQL reproductible est dans `supabase/migrations/`. Les six migrations enregistrées comprennent le bucket privé, l'espace commun par église, les droits minimaux, l'acceptation idempotente des invitations, l'unicité de l'identité locale et les invitations éditeur.
+Les règles RLS limitent les données et les objets aux membres de l'église concernée; `service_role` n'est pas requis dans l'application. Le SQL reproductible est dans `supabase/migrations/`. Les migrations enregistrées couvrent le bucket privé, l'espace commun par église, les droits minimaux, l'acceptation idempotente des invitations, l'unicité de l'identité locale, les invitations éditeur et la RPC `github_keepalive` sans accès aux données.
 
 Le plan Free est celui demandé et peut suffire en volume pour quelques églises, mais le volume réel (notamment les photos de justificatifs) et les limites de disponibilité/rétention du fournisseur restent à surveiller. Cela ne constitue pas une garantie absolue contre une panne ou une perte. Prévoir des exports externes et tester régulièrement la restauration.
+
+## Maintien d'activité du projet Free
+
+Le workflow `ci/workflows/supabase-keepalive.yml` (à installer dans `.github/workflows/`) appelle deux fois par semaine une fonction SQL qui ne fait que renvoyer l'heure du serveur. Elle n'accède à aucune sauvegarde et ne nécessite pas de clé privée Supabase : seuls l'URL du projet et la clé publishable, déjà publique pour l'application, sont utilisés. Il dispose aussi d'un lancement manuel et vérifie le retour HTTP.
+
+**Le workflow planifié ne s'exécutera qu'après présence du fichier sur la branche par défaut GitHub (`main`).** L'action réduit le risque d'inactivité, mais GitHub peut retarder/sauter une exécution et le fournisseur peut changer ses règles : ce n'est pas une garantie contre la mise en pause. Un projet déjà en pause devra être réactivé dans Supabase.
 
 ## Chiffrement retenu
 
