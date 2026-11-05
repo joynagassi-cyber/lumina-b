@@ -56,6 +56,7 @@ fun ChurchProfileScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
             .verticalScroll(rememberScrollState())
             .testTag("church_profile_screen")
     ) {

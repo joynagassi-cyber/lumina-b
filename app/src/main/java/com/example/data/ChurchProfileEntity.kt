@@ -1,12 +1,14 @@
 package com.example.data
 
 import androidx.room.Dao
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import java.util.UUID
 
 /**
  * Identité de l'organisation (l'église locale).
@@ -19,6 +21,9 @@ import kotlinx.coroutines.flow.Flow
 data class ChurchProfileEntity(
     @PrimaryKey
     val id: Long = 1L,
+    /** Identifiant stable de l'église, distinct du nom affiché et des autres dossiers locaux. */
+    @ColumnInfo(defaultValue = "''")
+    val churchUid: String = UUID.randomUUID().toString(),
     val churchName: String = "",
     val denomination: String = "",
     val city: String = "",

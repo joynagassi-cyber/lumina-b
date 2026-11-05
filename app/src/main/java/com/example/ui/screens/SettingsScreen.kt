@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -38,7 +41,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +59,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,6 +74,7 @@ import com.example.ui.designsystem.LuminaCardElevation
 import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.designsystem.StatTrio
 import com.example.ui.theme.ThemeMode
+import com.example.ui.theme.AccentPalettes
 import com.example.util.AmountDisplayMode
 import com.example.util.CurrencyFormatter
 import androidx.compose.ui.graphics.Color
@@ -78,6 +83,7 @@ import androidx.compose.ui.graphics.Color
 fun SettingsScreen(
     uiState: FinancialUiState,
     onThemeModeChange: (ThemeMode) -> Unit,
+    onAccentColorChange: (String) -> Unit = {},
     onAmountDisplayModeChange: (AmountDisplayMode) -> Unit,
     onNavigateToCaisses: () -> Unit = {},
     onNavigateToCategories: () -> Unit,
@@ -97,6 +103,7 @@ fun SettingsScreen(
     var confirmWipe: Boolean? by remember { mutableStateOf(null) }
     var showBackupDialog: Boolean by remember { mutableStateOf(false) }
     var showRestoreDialog: Boolean by remember { mutableStateOf(false) }
+    var showFeatureGuide: Boolean by remember { mutableStateOf(false) }
     var password: String by remember { mutableStateOf("") }
 
     Column(
@@ -121,6 +128,20 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
 
+        OutlinedButton(
+            onClick = { showFeatureGuide = true },
+            modifier = Modifier.fillMaxWidth().testTag("open_feature_guide")
+        ) {
+            Icon(Icons.Default.Description, contentDescription = null)
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(horizontalAlignment = Alignment.Start) {
+                Text("Guide des fonctionnalités", fontWeight = FontWeight.Bold)
+                Text("Comprendre chaque espace de Lumina", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+
         // Carte Héro Moteur & Système (LuminaCard avec dégradé indigo électrique et ombrage)
         LuminaCard(
             modifier = Modifier
@@ -141,20 +162,11 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(LuminaTokens.ShapeTile)
-                            .background(Color.White.copy(alpha = 0.20f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "L",
-                            fontWeight = FontWeight.Black,
-                            fontSize = 24.sp,
-                            color = Color.White
-                        )
-                    }
+                    Image(
+                        painter = painterResource(id = R.drawable.lumina_brand_icon),
+                        contentDescription = "Icône Lumina",
+                        modifier = Modifier.size(46.dp).clip(LuminaTokens.ShapeTile)
+                    )
 
                     Spacer(modifier = Modifier.width(LuminaTokens.SpacingDefault))
 
@@ -178,7 +190,7 @@ fun SettingsScreen(
                         color = Color.White.copy(alpha = 0.22f)
                     ) {
                         Text(
-                            text = "XOF",
+                            text = uiState.profile.currencyCode.ifBlank { "XOF" },
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
@@ -279,6 +291,56 @@ fun SettingsScreen(
                 },
                 showDivider = false
             )
+        }
+
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
+
+        GroupedCard(title = "Couleur de l'application") {
+            Text(
+                text = "La couleur choisie s'applique immédiatement aux cartes, graphiques et rapports.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AccentPalettes.forEach { palette ->
+                    val selected = uiState.profile.accentColorHex.equals(palette.hex, ignoreCase = true)
+                    val swatch = runCatching { Color(android.graphics.Color.parseColor(palette.hex)) }
+                        .getOrDefault(MaterialTheme.colorScheme.primary)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clickable { onAccentColorChange(palette.hex) }
+                            .testTag("accent_palette_${palette.key}")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(swatch)
+                                .then(
+                                    if (selected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    else Modifier.border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) Icon(Icons.Default.Check, contentDescription = "Sélectionnée", tint = Color.White)
+                        }
+                        Text(
+                            palette.label.substringBefore(" ("),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
@@ -559,6 +621,41 @@ fun SettingsScreen(
         }
 
         Spacer(modifier = Modifier.height(80.dp))
+    }
+
+    if (showFeatureGuide) {
+        val guideTopics = listOf(
+            "Tableau de bord" to "Consultez les entrées, les sorties, le solde et les tendances financières du dossier affiché.",
+            "Historique" to "Retrouvez les opérations et utilisez les menus de filtres pour choisir période, nature, caisse, catégorie, montant et ordre de tri.",
+            "Caisses" to "Suivez séparément les soldes des différentes caisses et enregistrez les transferts internes.",
+            "Budgets" to "Définissez des prévisions par catégorie et par mois, puis comparez-les aux dépenses enregistrées.",
+            "Projets, campagnes, événements et collectes" to "Suivez un objectif distinct du budget et affectez-y les écritures concernées.",
+            "Membres" to "Consultez et gérez le registre des membres de l'église.",
+            "Rapports et exports" to "Générez le bilan global ou les rapports PDF dédiés aux membres, aux budgets et à l'historique. L'Excel (.xlsx) est un classeur ; le CSV est un fichier texte.",
+            "Paramètres" to "Personnalisez l'apparence, la couleur, la devise et l'affichage des montants ; gérez aussi l'identité de l'église et les sauvegardes.",
+            "Démonstration" to "Explorez des données entièrement fictives en lecture seule. Elles ne sont pas ajoutées au dossier réel."
+        )
+        AlertDialog(
+            onDismissRequest = { showFeatureGuide = false },
+            title = { Text("Guide de Lumina") },
+            text = {
+                Column(
+                    modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    guideTopics.forEach { (title, description) ->
+                        Column {
+                            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showFeatureGuide = false }) { Text("Fermer") }
+            }
+        )
     }
 
     if (showBackupDialog) {

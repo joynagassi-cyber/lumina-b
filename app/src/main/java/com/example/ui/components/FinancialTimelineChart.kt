@@ -360,8 +360,8 @@ fun FinancialTimelineChart(
                                 detectTapGestures { offset ->
                                     val count = timelinePoints.size
                                     if (count > 0) {
-                                        val stepX = size.width / (count.coerceAtLeast(1))
-                                        val idx = (offset.x / stepX).toInt().coerceIn(0, count - 1)
+                                        val stepX = if (count > 1) size.width / (count - 1) else size.width
+                                        val idx = if (count > 1) (offset.x / stepX).toInt().coerceIn(0, count - 1) else 0
                                         selectedIndex = idx
                                     }
                                 }
@@ -371,8 +371,8 @@ fun FinancialTimelineChart(
                                     change.consume()
                                     val count = timelinePoints.size
                                     if (count > 0) {
-                                        val stepX = size.width / (count.coerceAtLeast(1))
-                                        val idx = (change.position.x / stepX).toInt().coerceIn(0, count - 1)
+                                        val stepX = if (count > 1) size.width / (count - 1) else size.width
+                                        val idx = if (count > 1) (change.position.x / stepX).toInt().coerceIn(0, count - 1) else 0
                                         selectedIndex = idx
                                     }
                                 }
@@ -413,7 +413,8 @@ fun FinancialTimelineChart(
                             val values = timelinePoints.map { it.cumulativeBalanceCents.toFloat() }
                             val minVal = values.minOrNull() ?: 0f
                             val maxVal = values.maxOrNull() ?: 1f
-                            val range = if (maxVal == minVal) 1f else (maxVal - minVal)
+                            val range = maxVal - minVal
+                            val hasVariation = range > 0f
 
                             val stepX = if (count > 1) width / (count - 1) else width
                             val path = Path()
@@ -421,7 +422,9 @@ fun FinancialTimelineChart(
 
                             val points = values.mapIndexed { idx, v ->
                                 val x = if (count > 1) idx * stepX else width / 2
-                                val norm = (v - minVal) / range
+                                // Une série constante (ou un seul jour) se place au milieu du graphe,
+                                // pas sur l'axe inférieur, ce qui évite l'impression d'un artefact vertical.
+                                val norm = if (hasVariation) (v - minVal) / range else 0.5f
                                 val animatedNorm = norm * animatedProgress.value
                                 val y = height * 0.85f - (animatedNorm * (height * 0.70f))
                                 Offset(x, y)
@@ -467,14 +470,17 @@ fun FinancialTimelineChart(
                                 val selIdx = if (selectedIndex in points.indices) selectedIndex else points.lastIndex
                                 val activePointOffset = points[selIdx]
 
-                                // Ligne verticale guide
-                                drawLine(
-                                    color = lineColor.copy(alpha = 0.45f),
-                                    start = Offset(activePointOffset.x, 0f),
-                                    end = Offset(activePointOffset.x, height),
-                                    strokeWidth = 1.5f,
-                                    pathEffect = gridPathEffect
-                                )
+                                // Une seule observation n'est pas une série : pas de curseur vertical
+                                // qui pourrait être confondu avec une barre de données.
+                                if (points.size > 1) {
+                                    drawLine(
+                                        color = lineColor.copy(alpha = 0.45f),
+                                        start = Offset(activePointOffset.x, 0f),
+                                        end = Offset(activePointOffset.x, height),
+                                        strokeWidth = 1.5f,
+                                        pathEffect = gridPathEffect
+                                    )
+                                }
 
                                 // Halo externe
                                 drawCircle(

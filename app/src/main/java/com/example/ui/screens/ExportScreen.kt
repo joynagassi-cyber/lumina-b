@@ -18,20 +18,30 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,6 +60,9 @@ import com.example.ui.designsystem.StatTrio
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import com.example.util.CurrencyFormatter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @Composable
 fun ExportScreen(
@@ -57,9 +70,14 @@ fun ExportScreen(
     onPeriodSelected: (PeriodFilter) -> Unit,
     onExportPdf: () -> Unit,
     onExportCsv: () -> Unit,
+    onExportExcel: () -> Unit = {},
+    onExportMembersPdf: () -> Unit = {},
+    onExportBudgetPdf: () -> Unit = {},
+    onExportHistoryPdf: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scrollState = rememberScrollState()
+    var periodMenuExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -91,23 +109,45 @@ fun ExportScreen(
             color = MaterialTheme.colorScheme.onSurface
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            PeriodFilter.values().forEach { period ->
-                val isSelected = uiState.selectedPeriod == period
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onPeriodSelected(period) },
-                    label = { Text(period.label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                    shape = LuminaTokens.ShapePill,
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
+        Box {
+            Button(
+                onClick = { periodMenuExpanded = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = LuminaTokens.ShapePill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(uiState.selectedPeriod.label, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir une période")
+                }
             }
+            DropdownMenu(expanded = periodMenuExpanded, onDismissRequest = { periodMenuExpanded = false }) {
+                PeriodFilter.values().forEach { period ->
+                    DropdownMenuItem(
+                        text = { Text(period.label) },
+                        onClick = {
+                            periodMenuExpanded = false
+                            onPeriodSelected(period)
+                        }
+                    )
+                }
+            }
+        }
+        if (uiState.selectedPeriod == PeriodFilter.PERSONNALISEE && uiState.bilan.periodStartMillis > 0L) {
+            val dateFormat = remember { SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE) }
+            Text(
+                "Du ${dateFormat.format(Date(uiState.bilan.periodStartMillis))} au ${dateFormat.format(Date(uiState.bilan.periodEndMillis))}",
+                modifier = Modifier.padding(top = 6.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
@@ -247,6 +287,41 @@ fun ExportScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
 
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = LuminaTokens.ShapeCard,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(LuminaTokens.SpacingDefault)) {
+                Text("Rapports dédiés", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Documents ciblés, séparés du bilan financier complet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                PillButton(
+                    text = "PDF membres", onClick = onExportMembersPdf,
+                    modifier = Modifier.fillMaxWidth(), icon = Icons.Default.Groups,
+                    isPrimary = false, testTag = "export_members_pdf_button"
+                )
+                Spacer(Modifier.height(8.dp))
+                PillButton(
+                    text = "PDF du budget", onClick = onExportBudgetPdf,
+                    modifier = Modifier.fillMaxWidth(), icon = Icons.Default.PieChart,
+                    isPrimary = false, testTag = "export_budget_pdf_button"
+                )
+                Spacer(Modifier.height(8.dp))
+                PillButton(
+                    text = "PDF de l'historique", onClick = onExportHistoryPdf,
+                    modifier = Modifier.fillMaxWidth(), icon = Icons.Default.History,
+                    isPrimary = false, testTag = "export_history_pdf_button"
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+
         // Carte Export 2 : Excel / CSV Universel
         Card(
             modifier = Modifier
@@ -277,13 +352,13 @@ fun ExportScreen(
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Export Excel / CSV",
+                                text = "Excel et CSV séparés",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Tableur UTF-8 universel",
+                                text = "Classeur Excel ou texte CSV",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -307,7 +382,7 @@ fun ExportScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Text(
-                    text = "Génère un fichier tabulaire avec BOM UTF-8 et séparateur universel prêt à s'ouvrir instantanément dans Microsoft Excel, Google Sheets ou LibreOffice sans aucun problème d'accent.",
+                    text = "Excel produit un classeur ouvrable avec colonnes typées et montants numériques. CSV produit un fichier texte UTF-8 séparé par des points-virgules, pour l'import dans d'autres outils.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
@@ -316,7 +391,16 @@ fun ExportScreen(
                 Spacer(modifier = Modifier.height(16.dp))
 
                 PillButton(
-                    text = "Générer & Partager l'Excel / CSV",
+                    text = "Générer le classeur Excel (.xlsx)",
+                    icon = Icons.Default.FileDownload,
+                    onClick = onExportExcel,
+                    isPrimary = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    testTag = "export_excel_button"
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                PillButton(
+                    text = "Générer le fichier CSV (.csv)",
                     icon = Icons.Default.FileDownload,
                     onClick = onExportCsv,
                     isPrimary = false,

@@ -27,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -60,14 +59,9 @@ fun FinancialSummaryCard(
     val incomeFormatted = CurrencyFormatter.format(totalIncomeCents, amountDisplayMode)
     val expenseFormatted = CurrencyFormatter.format(totalExpenseCents, amountDisplayMode)
 
-    // Dégradé bleu indigo électrique profond et énergique
-    val electricBlueGradient = Brush.linearGradient(
-        colors = listOf(
-            Color(0xFF3730A3), // Indigo intense
-            Color(0xFF4338CA), // Indigo électrique
-            Color(0xFF1E1B4B)  // Bleu nuit profond
-        )
-    )
+    // La carte suit l'accent actif du profil (palette de l'église), comme les autres surfaces héro.
+    val accent = MaterialTheme.colorScheme.primary
+    val heroGradient = LuminaTokens.heroGradient(accent)
 
     LuminaCard(
         modifier = modifier
@@ -75,8 +69,8 @@ fun FinancialSummaryCard(
             .testTag("financial_summary_card"),
         shape = RoundedCornerShape(24.dp),
         elevation = LuminaCardElevation.HERO,
-        backgroundBrush = electricBlueGradient,
-        spotShadowColor = Color(0x663730A3),
+        backgroundBrush = heroGradient,
+        spotShadowColor = LuminaTokens.heroSpotShadow(accent),
         ambientShadowColor = Color(0x44000000)
     ) {
         Column(

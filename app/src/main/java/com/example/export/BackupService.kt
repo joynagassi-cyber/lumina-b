@@ -43,7 +43,7 @@ object BackupService {
     suspend fun autoSnapshot(context: Context, repository: TransactionRepository): File? =
         withContext(Dispatchers.IO) {
             runCatching {
-                val dir = File(context.filesDir, AUTO_DIR).apply { mkdirs() }
+                val dir = workspaceDirectory(context.filesDir, AUTO_DIR, repository.workspaceId).apply { mkdirs() }
                 val existing = dir.listFiles()?.sortedBy { it.name } ?: emptyList()
                 val newest = existing.lastOrNull()
                 val fresh = newest != null &&
@@ -68,8 +68,8 @@ object BackupService {
             }.getOrNull()
         }
 
-    fun latestAutoFile(context: Context): File? {
-        val dir = File(context.filesDir, AUTO_DIR)
+    fun latestAutoFile(context: Context, workspaceId: String = "default"): File? {
+        val dir = workspaceDirectory(context.filesDir, AUTO_DIR, workspaceId)
         return dir.listFiles()?.sortedBy { it.name }?.lastOrNull()
     }
 
@@ -77,9 +77,10 @@ object BackupService {
         context: Context,
         repository: TransactionRepository
     ): BackupSnapshot = withContext(Dispatchers.IO) {
-        val file = latestAutoFile(context)
-            ?: throw IllegalArgumentException("Aucune copie automatique disponible.")
+        val file = latestAutoFile(context, repository.workspaceId)
+            ?: throw IllegalArgumentException("Aucune copie automatique disponible pour ce dossier.")
         val snapshot = BackupCodec.decode(file.readText())
+        verifyWorkspace(snapshot, repository)
         repository.restoreAll(snapshot)
         snapshot
     }
@@ -98,7 +99,7 @@ object BackupService {
         val json = BackupCodec.encode(snapshot)
         val content = if (encrypted) BackupCrypto.encrypt(json, password) else json
 
-        val dir = File(context.cacheDir, EXPORT_DIR).apply { mkdirs() }
+        val dir = workspaceDirectory(context.cacheDir, EXPORT_DIR, repository.workspaceId).apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.FRANCE).format(Date())
         val file = File(dir, "lumina-sauvegarde-$stamp" + if (encrypted) ".lumina" else ".json")
@@ -127,6 +128,7 @@ object BackupService {
             text
         }
         val snapshot = BackupCodec.decode(clear)
+        verifyWorkspace(snapshot, repository)
         repository.restoreAll(snapshot)
         snapshot
     }
@@ -151,5 +153,35 @@ object BackupService {
             text
         }
         BackupCodec.decode(clear)
+    }
+
+    private suspend fun verifyWorkspace(snapshot: BackupSnapshot, repository: TransactionRepository) {
+        val localProfile = repository.getProfile()?.takeIf { it.onboardingCompleted } ?: return
+        val importedUid = snapshot.profile?.churchUid.orEmpty()
+        val sameWorkspace = if (importedUid.isNotBlank() && localProfile.churchUid.isNotBlank()) {
+            importedUid == localProfile.churchUid
+        } else {
+            // Les anciennes sauvegardes n'avaient pas d'identifiant stable :
+            // ne les autoriser que dans le dossier historique et avec le même nom.
+            repository.workspaceId == "default" &&
+                snapshot.churchName.trim().equals(localProfile.churchName.trim(), ignoreCase = true)
+        }
+        val localSnapshot = repository.snapshotAll()
+        val pristineTarget = localSnapshot.transactions.isEmpty() &&
+            localSnapshot.members.isEmpty() &&
+            localSnapshot.budgets.isEmpty() &&
+            localSnapshot.projects.isEmpty() &&
+            localSnapshot.registers.all { it.isDefault && it.initialBalanceCents == 0L } &&
+            localSnapshot.categories.all { it.isDefault }
+        require(sameWorkspace || pristineTarget) {
+            "Cette sauvegarde appartient à une autre église et le dossier actuel contient déjà des données. Ouvrez un dossier vide avant de la restaurer."
+        }
+    }
+
+    private fun workspaceDirectory(baseDirectory: File, folderName: String, workspaceId: String): File {
+        val root = File(baseDirectory, folderName)
+        if (workspaceId == "default") return root
+        require(workspaceId.matches(Regex("[A-Za-z0-9_-]+"))) { "Identifiant de dossier invalide" }
+        return File(root, workspaceId)
     }
 }

@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -32,11 +34,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -79,18 +85,36 @@ fun BudgetScreen(
     onUpdateCategory: (id: Long, name: String, type: com.example.data.TransactionType, colorHex: String, isDefault: Boolean) -> Unit,
     onDeleteCategory: (com.example.data.CategoryEntity) -> Unit,
     createSignal: Int = 0,
+    onCreateConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var showSetBudgetDialog by remember { mutableStateOf(false) }
     var budgetToEdit by remember { mutableStateOf<CategoryBudgetProgress?>(null) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var selectedBudget by remember { mutableStateOf<CategoryBudgetProgress?>(null) }
+    var showBudgetSearch by remember { mutableStateOf(false) }
+    var budgetSearchQuery by remember { mutableStateOf("") }
+    var showBudgetFilterMenu by remember { mutableStateOf(false) }
+    var budgetStatusFilter by remember { mutableStateOf("all") }
+    val visibleBudgets = remember(uiState.categoryBudgetProgress, budgetSearchQuery, budgetStatusFilter) {
+        uiState.categoryBudgetProgress.filter { item ->
+            val matchesName = item.categoryName.contains(budgetSearchQuery.trim(), ignoreCase = true)
+            val matchesStatus = when (budgetStatusFilter) {
+                "exceeded" -> item.isExceeded
+                "near" -> item.isNearLimit && !item.isExceeded
+                "under" -> !item.isExceeded && !item.isNearLimit
+                else -> true
+            }
+            matchesName && matchesStatus
+        }
+    }
 
     // Le bouton flottant de l'application ouvre la création d'un budget
     LaunchedEffect(createSignal) {
         if (createSignal > 0) {
             budgetToEdit = null
             showSetBudgetDialog = true
+            onCreateConsumed()
         }
     }
 
@@ -124,7 +148,7 @@ fun BudgetScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Budgets & Suivi",
                     style = MaterialTheme.typography.headlineMedium,
@@ -138,20 +162,44 @@ fun BudgetScreen(
                 )
             }
 
-            // Bouton gestion des catégories
-            OutlinedButton(
-                onClick = { showCategoryManager = true },
-                shape = LuminaTokens.ShapePill,
-                modifier = Modifier.testTag("open_category_manager_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Category,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Catégories", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { showBudgetSearch = !showBudgetSearch }) {
+                    Icon(Icons.Default.Search, contentDescription = "Rechercher une catégorie")
+                }
+                Box {
+                    IconButton(onClick = { showBudgetFilterMenu = true }) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Filtrer les budgets")
+                    }
+                    DropdownMenu(expanded = showBudgetFilterMenu, onDismissRequest = { showBudgetFilterMenu = false }) {
+                        listOf("all" to "Toutes les catégories", "exceeded" to "Dépassement", "near" to "Proche du plafond", "under" to "Sous le seuil").forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { budgetStatusFilter = value; showBudgetFilterMenu = false }
+                            )
+                        }
+                    }
+                }
+                OutlinedButton(
+                    onClick = { showCategoryManager = true },
+                    shape = LuminaTokens.ShapePill,
+                    modifier = Modifier.testTag("open_category_manager_button")
+                ) {
+                    Icon(Icons.Default.Category, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Catégories", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
+        }
+
+        if (showBudgetSearch) {
+            OutlinedTextField(
+                value = budgetSearchQuery,
+                onValueChange = { budgetSearchQuery = it },
+                modifier = Modifier.fillMaxWidth().testTag("budget_search_field"),
+                singleLine = true,
+                label = { Text("Rechercher une catégorie") },
+                trailingIcon = { TextButton(onClick = { budgetSearchQuery = "" }) { Text("Effacer") } }
+            )
         }
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
@@ -333,7 +381,15 @@ fun BudgetScreen(
             }
         } else {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                uiState.categoryBudgetProgress.forEach { item ->
+                if (visibleBudgets.isEmpty()) {
+                    Text(
+                        "Aucun budget ne correspond à la recherche ou au filtre.",
+                        modifier = Modifier.fillMaxWidth().padding(18.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+                visibleBudgets.forEach { item ->
                     CategoryBudgetCard(
                         item = item,
                         displayMode = uiState.amountDisplayMode,

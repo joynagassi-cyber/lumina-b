@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -45,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import com.example.data.UserEntity
 import com.example.data.UserRole
 import com.example.ui.designsystem.LuminaTokens
+import com.example.ui.designsystem.LuminaBranding
 
 /**
  * Écran d'ouverture de session locale.
@@ -58,6 +63,8 @@ fun LoginScreen(
     users: List<UserEntity>,
     onLogin: (Long, String) -> Unit,
     onCreateFirstUser: (String, UserRole, String) -> Unit,
+    onStartDemo: () -> Unit = {},
+    onChooseWorkspace: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedUser by remember { mutableStateOf<UserEntity?>(null) }
@@ -79,11 +86,22 @@ fun LoginScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 32.dp)
         ) {
-            Text(
-                text = churchName.ifBlank { "Mon église" },
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.ExtraBold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.lumina_brand_icon),
+                    contentDescription = "Icône Lumina",
+                    modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp))
+                )
+                Text(
+                    text = churchName.ifBlank { "Mon église" },
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Text(
                 text = if (users.isEmpty()) {
                     "Créez votre premier utilisateur : le trésorier administre l'application."
@@ -92,6 +110,13 @@ fun LoginScreen(
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                text = LuminaBranding.SLOGAN,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 6.dp).testTag("lumina_slogan")
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -215,6 +240,27 @@ fun LoginScreen(
                     }
                     TextButton(onClick = { selectedUser = null; pin = "" }) { Text("Changer d'utilisateur") }
                 }
+            }
+
+            TextButton(
+                onClick = onStartDemo,
+                modifier = Modifier.fillMaxWidth().testTag("start_read_only_demo")
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Explorer la démonstration (essais temporaires)")
+            }
+            Text(
+                "Seules des opérations fictives peuvent être testées ; vos données réelles ne sont jamais modifiées.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = onChooseWorkspace,
+                modifier = Modifier.fillMaxWidth().testTag("open_workspace_picker_login")
+            ) {
+                Text("Changer ou créer un dossier d'église")
             }
 
             Spacer(modifier = Modifier.height(24.dp))

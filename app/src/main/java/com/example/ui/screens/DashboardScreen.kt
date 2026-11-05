@@ -21,8 +21,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PieChart
@@ -30,8 +32,10 @@ import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,6 +44,10 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,6 +91,7 @@ fun DashboardScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     val horizontalCaissesScroll = rememberScrollState()
+    var periodMenuExpanded by remember { mutableStateOf(false) }
     val dateFormat = SimpleDateFormat("dd MMM yyyy", Locale.FRANCE)
 
     Column(
@@ -92,6 +101,22 @@ fun DashboardScreen(
             .padding(horizontal = LuminaTokens.SpacingDefault, vertical = LuminaTokens.SpacingMedium)
             .testTag("dashboard_screen")
     ) {
+        if (uiState.isDemoMode) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp).testTag("read_only_demo_banner"),
+                shape = LuminaTokens.ShapeSubCard,
+                color = MaterialTheme.colorScheme.secondaryContainer
+            ) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text("Démonstration — vos données réelles sont protégées", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text("Les écritures d'essai sont fictives et effacées à la sortie.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+            }
+        }
         // En-tête Bilan
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -100,7 +125,7 @@ fun DashboardScreen(
         ) {
             Column {
                 Text(
-                    text = "Rapport de gestion",
+                    text = "Finances",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onBackground
@@ -115,30 +140,32 @@ fun DashboardScreen(
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
 
-        // Sélecteur de période en Pilule
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            PeriodFilter.values().forEach { period ->
-                val isSelected = uiState.selectedPeriod == period
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onPeriodSelected(period) },
-                    label = {
-                        Text(
-                            text = period.label,
-                            fontSize = 12.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                        )
-                    },
-                    shape = LuminaTokens.ShapePill,
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    modifier = Modifier.testTag("period_chip_${period.name.lowercase()}")
+        // Période groupée dans un menu pour éviter d'éparpiller les options.
+        Box {
+            Button(
+                onClick = { periodMenuExpanded = true },
+                modifier = Modifier.fillMaxWidth().testTag("dashboard_period_selector"),
+                shape = LuminaTokens.ShapePill,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurface
                 )
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Période : ${uiState.selectedPeriod.label}", fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir la période")
+                }
+            }
+            DropdownMenu(expanded = periodMenuExpanded, onDismissRequest = { periodMenuExpanded = false }) {
+                PeriodFilter.values().forEach { period ->
+                    DropdownMenuItem(
+                        text = { Text(period.label) },
+                        onClick = {
+                            periodMenuExpanded = false
+                            onPeriodSelected(period)
+                        }
+                    )
+                }
             }
         }
 

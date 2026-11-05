@@ -9,6 +9,7 @@ import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @Database(
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
         UserEntity::class,
         ProjectEntity::class
     ],
-    version = 8,
+    version = 10,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -37,25 +38,38 @@ abstract class LuminaDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
 
     companion object {
-        @Volatile
-        private var INSTANCE: LuminaDatabase? = null
+        private const val LEGACY_DATABASE_NAME = "lumina_financial.db"
+        private val INSTANCES = mutableMapOf<String, LuminaDatabase>()
+        private val DATABASE_SCOPE = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-        fun getDatabase(context: Context, scope: CoroutineScope? = null): LuminaDatabase {
-            return INSTANCE ?: synchronized(this) {
-                val instance = Room.databaseBuilder(
+        /** Compatibilité avec les tests et les installations historiques. */
+        fun getDatabase(context: Context, scope: CoroutineScope? = null): LuminaDatabase =
+            getDatabaseNamed(context, LEGACY_DATABASE_NAME, scope)
+
+        /** Ouvre un fichier Room distinct pour chaque dossier d'église. */
+        fun getDatabaseNamed(
+            context: Context,
+            databaseName: String,
+            @Suppress("UNUSED_PARAMETER") scope: CoroutineScope? = null
+        ): LuminaDatabase {
+            require(databaseName.matches(Regex("[A-Za-z0-9_.-]+\\.db"))) { "Nom de base invalide" }
+            return synchronized(INSTANCES) {
+                INSTANCES[databaseName] ?: Room.databaseBuilder(
                     context.applicationContext,
                     LuminaDatabase::class.java,
-                    "lumina_financial.db"
+                    databaseName
                 )
-                .addCallback(LuminaDatabaseCallback(scope))
-                .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-                // Filet de sécurité limité aux installations très anciennes (v4 et avant) :
-                // à partir de la v5, toutes les évolutions ont une migration explicite.
-                .fallbackToDestructiveMigrationFrom(1, 2, 3, 4)
-                .build()
-                INSTANCE = instance
-                instance
+                    .addCallback(LuminaDatabaseCallback(DATABASE_SCOPE, databaseName))
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+                    // Les installations anciennes conservent leurs migrations explicites.
+                    .fallbackToDestructiveMigrationFrom(1, 2, 3, 4)
+                    .build()
+                    .also { INSTANCES[databaseName] = it }
             }
+        }
+
+        fun closeDatabaseNamed(databaseName: String) {
+            synchronized(INSTANCES) { INSTANCES.remove(databaseName)?.close() }
         }
 
         /**
@@ -143,13 +157,30 @@ abstract class LuminaDatabase : RoomDatabase() {
             }
         }
 
+        /** Version 9 : distingue projets, campagnes, événements et collectes sans perdre les dossiers existants. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `projects` ADD COLUMN `kind` TEXT NOT NULL DEFAULT 'PROJECT'")
+            }
+        }
+
+        /** Version 10 : identifiant stable utilisé pour empêcher les imports entre églises. */
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `church_profile` ADD COLUMN `churchUid` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("UPDATE `church_profile` SET `churchUid` = lower(hex(randomblob(16))) WHERE `churchUid` = ''")
+            }
+        }
+
         private class LuminaDatabaseCallback(
-            private val scope: CoroutineScope?
+            private val scope: CoroutineScope?,
+            private val databaseName: String
         ) : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
                 super.onCreate(db)
                 scope?.launch(Dispatchers.IO) {
-                    INSTANCE?.let { database -> seedBaseData(database) }
+                    val database = synchronized(INSTANCES) { INSTANCES[databaseName] }
+                    database?.let { seedBaseData(it) }
                 }
             }
         }

@@ -67,6 +67,7 @@ fun MembersScreen(
     onUpdateMember: (MemberEntity) -> Unit,
     onDeleteMember: (MemberEntity) -> Unit,
     createSignal: Int = 0,
+    onCreateConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var query by remember { mutableStateOf("") }
@@ -82,6 +83,7 @@ fun MembersScreen(
         if (createSignal > 0) {
             editing = null
             showForm = true
+            onCreateConsumed()
         }
     }
 

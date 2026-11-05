@@ -22,6 +22,8 @@ import java.nio.charset.StandardCharsets
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * Génère le bilan financier d'une église.
@@ -60,9 +62,10 @@ object ReportExporter {
         periodStartMillis: Long = 0L,
         periodEndMillis: Long = 0L,
         generatedBy: String = "",
-        documentNumber: String = ""
+        documentNumber: String = "",
+        workspaceId: String = "default"
     ): File {
-        val cacheDir = File(context.cacheDir, "reports").apply { mkdirs() }
+        val cacheDir = reportDirectory(context, workspaceId)
         val safeName = profile.displayName
             .replace(Regex("[^A-Za-z0-9 ]"), "")
             .trim()
@@ -865,6 +868,96 @@ object ReportExporter {
         return pdfFile
     }
 
+    /** Rapport PDF autonome, volontairement distinct du bilan financier complet. */
+    fun generateTablePdf(
+        context: Context,
+        profile: ChurchProfileEntity,
+        title: String,
+        periodLabel: String,
+        columns: List<String>,
+        rows: List<List<String>>,
+        workspaceId: String = "default"
+    ): File {
+        require(columns.isNotEmpty()) { "Le rapport doit avoir au moins une colonne" }
+        val cacheDir = reportDirectory(context, workspaceId)
+        val safeTitle = title.replace(Regex("[^A-Za-z0-9]+"), "_").trim('_').ifBlank { "Rapport" }
+        val file = File(cacheDir, "${safeTitle}_${System.currentTimeMillis()}.pdf")
+        val accent = runCatching { AndroidColor.parseColor(profile.accentColorHex) }.getOrDefault(ACCENT_DEFAULT)
+        val doc = PdfDocument()
+        val margin = 34f
+        val contentWidth = PAGE_WIDTH - margin * 2
+        val rowHeight = 22f
+        val pageCapacity = 29
+        var pageNumber = 0
+        var page: PdfDocument.Page? = null
+        var y = 0f
+        val titlePaint = textPaint(17f, AndroidColor.rgb(17, 24, 39), bold = true)
+        val subtitlePaint = textPaint(9f, AndroidColor.rgb(82, 89, 102))
+        val headerPaint = textPaint(8f, AndroidColor.WHITE, bold = true)
+        val cellPaint = textPaint(7.5f, AndroidColor.rgb(31, 41, 55))
+        val linePaint = Paint().apply { color = AndroidColor.rgb(220, 224, 232); strokeWidth = 0.7f }
+        val bandPaint = Paint().apply { color = accent; isAntiAlias = true }
+        val alternatePaint = Paint().apply { color = AndroidColor.rgb(246, 248, 251); isAntiAlias = true }
+
+        fun startPage() {
+            pageNumber++
+            val info = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, pageNumber).create()
+            page = doc.startPage(info)
+            val canvas = page!!.canvas
+            canvas.drawRect(0f, 0f, PAGE_WIDTH.toFloat(), 8f, bandPaint)
+            canvas.drawText(profile.displayName.take(50), margin, 30f, subtitlePaint)
+            canvas.drawText(title.take(60), margin, 57f, titlePaint)
+            canvas.drawText("$periodLabel · Édité le ${dateFormat.format(Date())} · ${rows.size} ligne(s)", margin, 74f, subtitlePaint)
+            y = 94f
+            val colWidth = contentWidth / columns.size
+            canvas.drawRoundRect(margin, y, PAGE_WIDTH - margin, y + rowHeight, 4f, 4f, bandPaint)
+            columns.forEachIndexed { index, value ->
+                canvas.drawText(value.take(18), margin + index * colWidth + 6f, y + 14f, headerPaint)
+            }
+            y += rowHeight
+        }
+
+        fun finishPage() {
+            val current = page ?: return
+            val canvas = current.canvas
+            canvas.drawLine(margin, PAGE_HEIGHT - 35f, PAGE_WIDTH - margin, PAGE_HEIGHT - 35f, linePaint)
+            val footerPaint = textPaint(7f, AndroidColor.rgb(115, 122, 135))
+            canvas.drawText("${profile.displayName} · Page $pageNumber", margin, PAGE_HEIGHT - 20f, footerPaint)
+            doc.finishPage(current)
+            page = null
+        }
+
+        // Local functions can reference one another; initialize the first page after declarations.
+        startPage()
+        if (rows.isEmpty()) {
+            page!!.canvas.drawText("Aucune donnée pour cette période.", margin, y + 18f, cellPaint)
+        } else {
+            val colWidth = contentWidth / columns.size
+            rows.forEachIndexed { rowIndex, values ->
+                if (rowIndex > 0 && rowIndex % pageCapacity == 0) {
+                    finishPage()
+                    startPage()
+                }
+                val canvas = page!!.canvas
+                if (rowIndex % 2 == 1) canvas.drawRect(margin, y, PAGE_WIDTH - margin, y + rowHeight, alternatePaint)
+                repeat(columns.size) { columnIndex ->
+                    val value = values.getOrElse(columnIndex) { "" }
+                    val maxChars = (colWidth / 4.2f).toInt().coerceAtLeast(8)
+                    canvas.drawText(value.replace('\n', ' ').take(maxChars), margin + columnIndex * colWidth + 6f, y + 14f, cellPaint)
+                }
+                canvas.drawLine(margin, y + rowHeight, PAGE_WIDTH - margin, y + rowHeight, linePaint)
+                y += rowHeight
+            }
+        }
+        finishPage()
+        try {
+            FileOutputStream(file).use { doc.writeTo(it) }
+        } finally {
+            doc.close()
+        }
+        return file
+    }
+
     // ---------------------------------------------------------------------
     // Export CSV / tableur
     // ---------------------------------------------------------------------
@@ -875,10 +968,17 @@ object ReportExporter {
         totalIncomeCents: Long,
         totalExpenseCents: Long,
         netBalanceCents: Long,
-        profile: ChurchProfileEntity = ChurchProfileEntity()
+        profile: ChurchProfileEntity = ChurchProfileEntity(),
+        workspaceId: String = "default"
     ): File {
-        val cacheDir = File(context.cacheDir, "reports").apply { mkdirs() }
+        val cacheDir = reportDirectory(context, workspaceId)
         val csvFile = File(cacheDir, "Releve_${System.currentTimeMillis()}.csv")
+        fun csvField(value: String): String {
+            val singleLine = value.replace("\r", " ").replace("\n", " ")
+            val first = singleLine.trimStart().firstOrNull()
+            val protected = if (first == '=' || first == '+' || first == '-' || first == '@') "'$singleLine" else singleLine
+            return "\"${protected.replace("\"", "\"\"")}\""
+        }
 
         FileOutputStream(csvFile).use { fos ->
             fos.write(byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()))
@@ -902,17 +1002,20 @@ object ReportExporter {
                         tx.type == TransactionType.INCOME -> tx.amountCents
                         else -> -tx.amountCents
                     }
-                    writer.append(dateStr).append(';')
-                        .append(timeStr).append(';')
-                        .append('"').append(tx.cashRegisterName.replace(";", ",")).append('"').append(';')
-                        .append(nature).append(';')
-                        .append(tx.category.replace(";", ",")).append(';')
-                        .append('"').append(tx.title.replace(";", ",")).append('"').append(';')
-                        .append(amountRaw.toString()).append(';')
-                        .append(if (tx.isTransfer) "OUI" else "NON").append(';')
-                        .append(if (tx.hasReceipt) "OUI" else "NON").append(';')
-                        .append('"').append(tx.note.replace(";", ",").replace("\n", " ")).append('"')
-                        .append('\n')
+                    writer.append(
+                        listOf(
+                            csvField(dateStr),
+                            csvField(timeStr),
+                            csvField(tx.cashRegisterName),
+                            csvField(nature),
+                            csvField(tx.category),
+                            csvField(tx.title),
+                            amountRaw.toString(), // Montant numérique, pas une formule de texte
+                            csvField(if (tx.isTransfer) "OUI" else "NON"),
+                            csvField(if (tx.hasReceipt) "OUI" else "NON"),
+                            csvField(tx.note)
+                        ).joinToString(";") + "\n"
+                    )
                 }
 
                 writer.append("\n# SYNTHESE DE LA PERIODE\n")
@@ -923,6 +1026,85 @@ object ReportExporter {
         }
 
         return csvFile
+    }
+
+    /** Génère un classeur OOXML .xlsx avec des cellules texte et numériques typées. */
+    fun generateExcelExport(
+        context: Context,
+        periodLabel: String,
+        transactions: List<TransactionEntity>,
+        totalIncomeCents: Long,
+        totalExpenseCents: Long,
+        netBalanceCents: Long,
+        profile: ChurchProfileEntity = ChurchProfileEntity(),
+        workspaceId: String = "default"
+    ): File {
+        val cacheDir = reportDirectory(context, workspaceId)
+        val file = File(cacheDir, "Releve_${System.currentTimeMillis()}.xlsx")
+        fun xml(value: String): String = value
+            .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace("\"", "&quot;").replace("'", "&apos;")
+        fun columnName(index: Int): String {
+            var n = index + 1
+            val result = StringBuilder()
+            while (n > 0) {
+                val remainder = (n - 1) % 26
+                result.append(('A'.code + remainder).toChar())
+                n = (n - 1) / 26
+            }
+            return result.reverse().toString()
+        }
+        fun textCell(ref: String, value: String): String =
+            "<c r=\"$ref\" t=\"inlineStr\"><is><t xml:space=\"preserve\">${xml(value)}</t></is></c>"
+        fun numberCell(ref: String, value: Long): String = "<c r=\"$ref\"><v>$value</v></c>"
+        val rows = mutableListOf<List<String>>()
+        rows += listOf(profile.displayName, "Période", periodLabel).mapIndexed { i, value -> textCell("${columnName(i)}1", value) }
+        rows += listOf("Devise", profile.currencyCode.ifBlank { "FCFA" }).mapIndexed { i, value -> textCell("${columnName(i)}2", value) }
+        val headers = listOf("Date", "Heure", "Caisse", "Nature", "Catégorie", "Intitulé", "Montant (centimes)", "Virement interne", "Justificatif", "Note")
+        rows += headers.mapIndexed { i, value -> textCell("${columnName(i)}3", value) }
+        transactions.sortedBy { it.timestamp }.forEachIndexed { txIndex, tx ->
+            val rowNumber = txIndex + 4
+            val kind = when {
+                tx.isTransfer -> "VIREMENT"
+                tx.type == TransactionType.INCOME -> "ENTRÉE"
+                else -> "SORTIE"
+            }
+            val signedAmount = if (tx.type == TransactionType.INCOME) tx.amountCents else -tx.amountCents
+            val cells = listOf(
+                textCell("A$rowNumber", dateFormat.format(Date(tx.timestamp))),
+                textCell("B$rowNumber", timeFormat.format(Date(tx.timestamp))),
+                textCell("C$rowNumber", tx.cashRegisterName), textCell("D$rowNumber", kind),
+                textCell("E$rowNumber", tx.category), textCell("F$rowNumber", tx.title),
+                numberCell("G$rowNumber", signedAmount), textCell("H$rowNumber", if (tx.isTransfer) "Oui" else "Non"),
+                textCell("I$rowNumber", if (tx.hasReceipt) "Oui" else "Non"), textCell("J$rowNumber", tx.note)
+            )
+            rows += cells
+        }
+        val summaryStart = rows.size + 1
+        rows += listOf(textCell("A$summaryStart", "Synthèse"), textCell("B$summaryStart", "Entrées (centimes)"), numberCell("C$summaryStart", totalIncomeCents))
+        rows += listOf(textCell("A${summaryStart + 1}", ""), textCell("B${summaryStart + 1}", "Sorties (centimes)"), numberCell("C${summaryStart + 1}", totalExpenseCents))
+        rows += listOf(textCell("A${summaryStart + 2}", ""), textCell("B${summaryStart + 2}", "Solde net (centimes)"), numberCell("C${summaryStart + 2}", netBalanceCents))
+        val sheetXml = buildString {
+            append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>")
+            append("<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>")
+            rows.forEachIndexed { i, cells -> append("<row r=\"${i + 1}\">").append(cells.joinToString("")).append("</row>") }
+            append("</sheetData></worksheet>")
+        }
+        val entries = linkedMapOf(
+            "[Content_Types].xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
+            "_rels/.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""",
+            "xl/workbook.xml" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Opérations" sheetId="1" r:id="rId1"/></sheets></workbook>""",
+            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""",
+            "xl/worksheets/sheet1.xml" to sheetXml
+        )
+        ZipOutputStream(FileOutputStream(file).buffered()).use { zip ->
+            entries.forEach { (name, content) ->
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(content.toByteArray(StandardCharsets.UTF_8))
+                zip.closeEntry()
+            }
+        }
+        return file
     }
 
     fun shareFile(context: Context, file: File, mimeType: String, subject: String) {
@@ -953,6 +1135,13 @@ object ReportExporter {
         this.color = color
         typeface = Typeface.create(Typeface.DEFAULT, if (bold) Typeface.BOLD else Typeface.NORMAL)
         isAntiAlias = true
+    }
+
+    private fun reportDirectory(context: Context, workspaceId: String): File {
+        val root = File(context.cacheDir, "reports")
+        if (workspaceId == "default") return root.apply { mkdirs() }
+        require(workspaceId.matches(Regex("[A-Za-z0-9_-]+"))) { "Identifiant de dossier invalide" }
+        return File(root, workspaceId).apply { mkdirs() }
     }
 
     private fun tableRow(label: String, value: String): String = "$label : $value"

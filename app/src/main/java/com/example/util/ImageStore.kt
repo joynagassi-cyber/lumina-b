@@ -34,10 +34,12 @@ object ImageStore {
     }
 
     /** Copie un justificatif dans le stockage privé et renvoie son chemin. */
-    fun uriToReceiptFile(context: Context, uri: Uri): String? {
+    fun uriToReceiptFile(context: Context, uri: Uri, workspaceId: String = "default"): String? {
         val bitmap = decodeScaled(context, uri, RECEIPT_MAX_DIMENSION) ?: return null
         return try {
-            val directory = File(context.filesDir, "justificatifs").apply { mkdirs() }
+            require(workspaceId == "default" || workspaceId.matches(Regex("[A-Za-z0-9_-]+")))
+            val root = File(context.filesDir, "justificatifs")
+            val directory = (if (workspaceId == "default") root else File(root, workspaceId)).apply { mkdirs() }
             val file = File(directory, "justif_${System.currentTimeMillis()}.jpg")
             file.outputStream().use { stream ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 82, stream)
