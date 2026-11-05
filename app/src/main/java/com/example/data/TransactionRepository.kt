@@ -435,19 +435,26 @@ class TransactionRepository(
     // Sauvegarde et restauration du dossier
     // ==========================================
 
-    /** Rassemble tout le dossier dans une sauvegarde unique. */
-    suspend fun snapshotAll(): BackupSnapshot = BackupSnapshot(
-        createdAt = System.currentTimeMillis(),
-        churchName = churchProfileDao.getProfile()?.churchName ?: "",
-        users = userDao.getUsers(),
-        profile = churchProfileDao.getProfile(),
-        members = memberDao.getAllForSync(),
-        categories = categoryDao.getAllForSync(),
-        budgets = budgetDao.getAllOnce(),
-        registers = cashRegisterDao.getAllForSync(),
-        projects = projectDao.getAllForBackup(),
-        transactions = transactionDao.getAllForSync()
-    )
+    /** Rassemble le dossier dans un instantané cohérent pour éviter un ZIP à moitié avant/après une écriture. */
+    suspend fun snapshotAll(): BackupSnapshot {
+        val snapshot = suspend {
+            val profile = churchProfileDao.getProfile()
+            BackupSnapshot(
+                createdAt = System.currentTimeMillis(),
+                churchName = profile?.churchName ?: "",
+                users = userDao.getUsers(),
+                profile = profile,
+                members = memberDao.getAllForSync(),
+                categories = categoryDao.getAllForSync(),
+                budgets = budgetDao.getAllOnce(),
+                registers = cashRegisterDao.getAllForSync(),
+                projects = projectDao.getAllForBackup(),
+                transactions = transactionDao.getAllForSync()
+            )
+        }
+        val database = database
+        return if (database != null) database.withTransaction { snapshot() } else snapshot()
+    }
 
     /**
      * Restauration atomique : une interruption ne doit jamais laisser une base

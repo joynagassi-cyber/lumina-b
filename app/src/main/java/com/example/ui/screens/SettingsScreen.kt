@@ -43,6 +43,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -114,6 +115,11 @@ fun SettingsScreen(
     onCreateBackup: (String) -> Unit = {},
     onRequestRestore: (String) -> Unit = {},
     onRestoreAuto: () -> Unit = {},
+    onEnableCloudBackup: () -> Unit = {},
+    onCheckCloudBackup: () -> Unit = {},
+    onRestoreCloudBackup: () -> Unit = {},
+    cloudProgress: com.example.cloud.CloudBackupLocalStore.BackupProgress? = null,
+    cloudBackupStatus: String = "",
     lastAutoBackupLabel: String = "",
     modifier: Modifier = Modifier
 ) {
@@ -122,6 +128,7 @@ fun SettingsScreen(
     var confirmWipe: Boolean? by remember { mutableStateOf(null) }
     var showBackupDialog: Boolean by remember { mutableStateOf(false) }
     var showRestoreDialog: Boolean by remember { mutableStateOf(false) }
+    var showCloudRestoreConfirm: Boolean by remember { mutableStateOf(false) }
     var showFeatureGuide: Boolean by remember { mutableStateOf(false) }
     var guideStep by remember { mutableIntStateOf(0) }
     var password: String by remember { mutableStateOf("") }
@@ -653,6 +660,61 @@ fun SettingsScreen(
                     Text("Restaurer", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
+            Spacer(modifier = Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Copie cloud partagée", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                cloudBackupStatus.ifBlank {
+                    "Activez la copie partagée une seule fois. Lumina tentera ensuite une sauvegarde quotidienne (au moins trois jours distincts par semaine) quand Internet est disponible."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "L'activation programme les envois; « Vérifier » télécharge et contrôle la dernière copie sans restaurer ni modifier les données. Les envois peuvent être retardés par Android ou l'absence de réseau. Le fournisseur chiffre les données au repos, mais peut techniquement accéder au contenu.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (cloudProgress != null) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().testTag("cloud_backup_progress"),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        if (cloudProgress.isRunning) "Sauvegarde en cours — ${cloudProgress.percent}%" else cloudProgress.message,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    LinearProgressIndicator(
+                        progress = { cloudProgress.percent / 100f },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    if (cloudProgress.isRunning) {
+                        Text(cloudProgress.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = onEnableCloudBackup,
+                    enabled = uiState.canWrite && !uiState.isDemoMode,
+                    modifier = Modifier.weight(1f).testTag("enable_cloud_backup")
+                ) { Text("Activer la sauvegarde") }
+                OutlinedButton(
+                    onClick = onCheckCloudBackup,
+                    enabled = !uiState.isDemoMode,
+                    modifier = Modifier.weight(1f).testTag("check_cloud_backup")
+                ) { Text("Vérifier la copie") }
+            }
+            OutlinedButton(
+                onClick = { showCloudRestoreConfirm = true },
+                enabled = !uiState.isDemoMode,
+                modifier = Modifier.fillMaxWidth().testTag("restore_cloud_backup")
+            ) { Text("Restaurer le cloud") }
         }
 
         }
@@ -726,6 +788,25 @@ fun SettingsScreen(
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showFeatureGuide = false }) { Text("Fermer le guide") }
+            }
+        )
+    }
+
+    if (showCloudRestoreConfirm) {
+        AlertDialog(
+            onDismissRequest = { showCloudRestoreConfirm = false },
+            title = { Text("Restaurer la sauvegarde cloud ?") },
+            text = {
+                Text("Cette action remplacera les données du dossier par la dernière version partagée de l'église. Une copie locale de sécurité sera créée avant la restauration.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCloudRestoreConfirm = false
+                    onRestoreCloudBackup()
+                }) { Text("Restaurer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloudRestoreConfirm = false }) { Text("Annuler") }
             }
         )
     }

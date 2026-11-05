@@ -63,6 +63,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
@@ -228,6 +229,13 @@ fun LuminaApp(
     var pendingRestore by remember {
         mutableStateOf<Pair<android.net.Uri, com.example.export.BackupSnapshot>?>(null)
     }
+    var cloudBackupStatus by remember(activeWorkspace.id) {
+        mutableStateOf(com.example.cloud.CloudBackupLocalStore.status(context, activeWorkspace.id))
+    }
+    val cloudProgressFlow = remember(activeWorkspace.id) {
+        com.example.cloud.CloudBackupLocalStore.progressFlow(activeWorkspace.id)
+    }
+    val cloudProgress by cloudProgressFlow.collectAsStateWithLifecycle(initialValue = null)
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
@@ -314,6 +322,7 @@ fun LuminaApp(
     // Réception des messages de l'application
     LaunchedEffect(Unit) {
         viewModel.eventFlow.collectLatest { message ->
+            cloudBackupStatus = com.example.cloud.CloudBackupLocalStore.status(context, activeWorkspace.id)
             snackbarHostState.showSnackbar(message)
         }
     }
@@ -683,6 +692,7 @@ fun LuminaApp(
             contentWindowInsets = WindowInsets.safeDrawing,
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
+                Column {
                 CenterAlignedTopAppBar(
                     title = {
                         Text(
@@ -761,6 +771,36 @@ fun LuminaApp(
                         containerColor = MaterialTheme.colorScheme.background
                     )
                 )
+                if (!uiState.isDemoMode) cloudProgress?.takeIf { it.isRunning }?.let { progress ->
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer)
+                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            "Sauvegarde cloud en cours — ${progress.percent}%",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        LinearProgressIndicator(
+                            progress = { progress.percent / 100f },
+                            modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.14f)
+                        )
+                        Text(
+                            progress.message,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                }
             },
             bottomBar = {
                 Box(
@@ -987,6 +1027,19 @@ fun LuminaApp(
                                 if (file.name.endsWith(".lumina-invite")) "Invitation légère Lumina" else "Échange de données Lumina"
                             )
                         },
+                        onCreateCloudInvite = { ctx, onResult -> viewModel.createCloudInvite(ctx, onResult) },
+                        onAcceptCloudInvite = { ctx, code, onResult ->
+                            viewModel.acceptCloudInvite(ctx, code) { result ->
+                                if (result.isSuccess) {
+                                    com.example.cloud.CloudBackupScheduler.schedule(
+                                        ctx,
+                                        activeWorkspace.id,
+                                        activeWorkspace.databaseName
+                                    )
+                                }
+                                onResult(result)
+                            }
+                        },
                         onLogout = { viewModel.logout(context) }
                     )
                     AppScreen.SETTINGS -> SettingsScreen(
@@ -1043,6 +1096,46 @@ fun LuminaApp(
                                 }
                             }
                         },
+                        onEnableCloudBackup = {
+                            viewModel.enableCloudBackup(context) { result ->
+                                result.onSuccess { message ->
+                                    com.example.cloud.CloudBackupScheduler.schedule(
+                                        context,
+                                        activeWorkspace.id,
+                                        activeWorkspace.databaseName
+                                    )
+                                    cloudBackupStatus = message
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }.onFailure { error ->
+                                    cloudBackupStatus = error.message ?: "Sauvegarde cloud indisponible"
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }
+                            }
+                        },
+                        onCheckCloudBackup = {
+                            viewModel.checkCloudBackup(context) { result ->
+                                result.onSuccess { message ->
+                                    cloudBackupStatus = message
+                                    scope.launch { snackbarHostState.showSnackbar(message) }
+                                }.onFailure { error ->
+                                    cloudBackupStatus = error.message ?: "Vérification cloud impossible"
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }
+                            }
+                        },
+                        onRestoreCloudBackup = {
+                            viewModel.restoreCloudBackup(context) { result ->
+                                result.onSuccess { snapshot ->
+                                    cloudBackupStatus = "Restauration cloud terminée : ${snapshot.transactionCount} écritures, ${snapshot.memberCount} membres."
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }.onFailure { error ->
+                                    cloudBackupStatus = error.message ?: "Restauration cloud impossible"
+                                    scope.launch { snackbarHostState.showSnackbar(cloudBackupStatus) }
+                                }
+                            }
+                        },
+                        cloudProgress = cloudProgress,
+                        cloudBackupStatus = cloudBackupStatus,
                         lastAutoBackupLabel = if (uiState.isDemoMode) "" else lastAutoBackupLabel
                     )
                 }

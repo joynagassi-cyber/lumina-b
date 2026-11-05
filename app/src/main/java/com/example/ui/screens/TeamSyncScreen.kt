@@ -80,6 +80,8 @@ fun TeamSyncScreen(
     onRefreshConflicts: (Context) -> Unit,
     onResolveConflict: (Context, SyncConflictItem, Boolean, String) -> Unit,
     onShareFile: (Context, java.io.File) -> Unit,
+    onCreateCloudInvite: (Context, (Result<String>) -> Unit) -> Unit = { _, result -> result(Result.failure(IllegalStateException("Cloud indisponible"))) },
+    onAcceptCloudInvite: (Context, String, (Result<String>) -> Unit) -> Unit = { _, _, result -> result(Result.failure(IllegalStateException("Cloud indisponible"))) },
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -92,6 +94,10 @@ fun TeamSyncScreen(
     var deleting by remember { mutableStateOf<UserEntity?>(null) }
     var passphrase by remember { mutableStateOf("") }
     var pendingImport by remember { mutableStateOf<android.net.Uri?>(null) }
+    var cloudInviteCode by remember { mutableStateOf("") }
+    var cloudInviteInput by remember { mutableStateOf("") }
+    var cloudInviteMessage by remember { mutableStateOf("") }
+    var churchInvitationMessage by remember { mutableStateOf("") }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -390,18 +396,99 @@ fun TeamSyncScreen(
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Invitation légère pour un nouveau membre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
-                        "Ce petit fichier contient le nom, l'identité visuelle et l'identifiant de l'église, sans finances, écritures, membres ni comptes/PIN. " +
-                        "Il est chiffré avec la phrase ci-dessus : transmettez-la séparément. La personne l'importe pendant l'accueil, choisit son rôle, crée son profil et son PIN, puis importe séparément un fichier d'échange si elle doit recevoir les données.",
+                    "Ce petit fichier contient le nom, l'identité visuelle et l'identifiant de l'église, sans finances, écritures, membres ni comptes/PIN. Il est chiffré : la phrase de passe doit être transmise séparément.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                OutlinedTextField(
+                    value = passphrase,
+                    onValueChange = { passphrase = it; churchInvitationMessage = "" },
+                    label = { Text("Phrase de passe pour l'invitation (6 caractères minimum)") },
+                    supportingText = { Text("Utilisez la même phrase lors de l'import sur le nouvel appareil.") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth().testTag("invitation_passphrase")
+                )
+                if (churchInvitationMessage.isNotBlank()) {
+                    Text(churchInvitationMessage, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else if (!uiState.canWrite) {
+                    Text("Ce compte est en lecture seule : un utilisateur autorisé à modifier le dossier doit créer l'invitation.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else if (passphrase.length < 6) {
+                    Text("Saisissez une phrase d'au moins 6 caractères : elle est nécessaire pour créer le fichier chiffré.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+                }
                 OutlinedButton(
-                    onClick = { onCreateInvitation(context, passphrase) { file -> onShareFile(context, file) } },
-                    enabled = uiState.canWrite && passphrase.length >= 6,
+                    onClick = {
+                        when {
+                            !uiState.canWrite -> churchInvitationMessage = "Création impossible en lecture seule. Connectez-vous avec un rôle autorisé à modifier ce dossier."
+                            passphrase.length < 6 -> churchInvitationMessage = "La phrase de passe doit contenir au moins 6 caractères."
+                            else -> onCreateInvitation(context, passphrase) { file -> onShareFile(context, file) }
+                        }
+                    },
+                    enabled = !uiState.isDemoMode,
                     modifier = Modifier.fillMaxWidth().testTag("create_church_invitation")
                 ) {
                     Icon(Icons.Default.Groups, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(modifier = Modifier.width(8.dp))
                     Text("Créer et partager l'invitation")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("cloud_backup_invitation_card"),
+            shape = LuminaTokens.ShapeSubCard,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f))
+        ) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Sauvegarde partagée de l'église", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Activez d'abord la sauvegarde cloud dans Paramètres. Puis créez un code à usage unique et transmettez-le en privé. Un appareil neuf doit d'abord importer l'invitation légère de l'église; ensuite, il accepte ce code et restaure la version partagée avant toute publication.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(
+                    onClick = {
+                        onCreateCloudInvite(context) { result ->
+                            result.onSuccess {
+                                cloudInviteCode = it
+                                cloudInviteMessage = "Code valable 7 jours. Transmettez-le uniquement au membre concerné."
+                            }.onFailure { cloudInviteMessage = it.message ?: "Création du code impossible" }
+                        }
+                    },
+                    enabled = uiState.canWrite && !uiState.isDemoMode,
+                    modifier = Modifier.fillMaxWidth().testTag("create_cloud_backup_invite")
+                ) { Text("Créer un code d'invitation cloud") }
+                if (cloudInviteCode.isNotBlank()) {
+                    OutlinedTextField(
+                        value = cloudInviteCode,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Code à transmettre en privé") },
+                        modifier = Modifier.fillMaxWidth().testTag("cloud_invite_code")
+                    )
+                }
+                OutlinedTextField(
+                    value = cloudInviteInput,
+                    onValueChange = { cloudInviteInput = it.trim() },
+                    label = { Text("Code reçu de l'église") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("cloud_invite_input")
+                )
+                Button(
+                    onClick = {
+                        onAcceptCloudInvite(context, cloudInviteInput) { result ->
+                            result.onSuccess {
+                                cloudInviteMessage = "Appareil associé. Restaurez la sauvegarde cloud avant de publier vos données locales."
+                                cloudInviteInput = ""
+                            }.onFailure { cloudInviteMessage = it.message ?: "Invitation impossible à accepter" }
+                        }
+                    },
+                    enabled = cloudInviteInput.isNotBlank() && !uiState.isDemoMode,
+                    modifier = Modifier.fillMaxWidth().testTag("accept_cloud_backup_invite")
+                ) { Text("Associer cet appareil") }
+                if (cloudInviteMessage.isNotBlank()) {
+                    Text(cloudInviteMessage, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                 }
             }
         }

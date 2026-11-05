@@ -1,5 +1,6 @@
 import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
 import java.util.Properties
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -23,6 +24,22 @@ fun signingValue(envKey: String, propertyKey: String): String? =
   System.getenv(envKey)?.takeIf { it.isNotBlank() }
     ?: keystoreProperties.getProperty(propertyKey)?.takeIf { it.isNotBlank() }
 
+val appEnvProperties = Properties().apply {
+  val envFile = rootProject.file(".env")
+  if (envFile.exists()) envFile.inputStream().use { load(it) }
+}
+fun appConfigValue(name: String, fallback: String): String =
+  System.getenv(name)?.takeIf { it.isNotBlank() }
+    ?: appEnvProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+    ?: fallback
+fun buildConfigString(value: String): String =
+  "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+
+val supabaseUrl = appConfigValue("SUPABASE_URL", "https://ybfebchvsgbgpeesrqld.supabase.co")
+val supabasePublishableKey = appConfigValue(
+  "SUPABASE_PUBLISHABLE_KEY",
+  "sb_publishable_U71rafe7hFkDcF6P-uFjgQ_WDGaHMY8"
+)
 
 android {
   namespace = "com.example"
@@ -38,6 +55,8 @@ android {
     //   VERSION_CODE=42 VERSION_NAME=1.2.3 ./gradlew assembleRelease
     versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
     versionName = System.getenv("VERSION_NAME")?.takeIf { it.isNotBlank() } ?: "1.0"
+    buildConfigField("String", "SUPABASE_URL", buildConfigString(supabaseUrl))
+    buildConfigField("String", "SUPABASE_PUBLISHABLE_KEY", buildConfigString(supabasePublishableKey))
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -127,6 +146,7 @@ dependencies {
   // implementation(libs.androidx.navigation.compose)
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
+  implementation(libs.androidx.work.runtime.ktx)
   // implementation(libs.coil.compose)
   implementation(libs.converter.moshi)
   implementation(libs.firebase.ai)
