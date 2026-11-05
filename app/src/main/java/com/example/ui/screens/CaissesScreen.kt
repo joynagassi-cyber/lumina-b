@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Savings
@@ -91,6 +92,23 @@ fun CaissesScreen(
     var caisseToDelete by remember { mutableStateOf<CashRegisterSummary?>(null) }
     var selectedCaisse by remember { mutableStateOf<CashRegisterSummary?>(null) }
     var transferSourceId by remember { mutableStateOf<Long?>(null) }
+    var showCaisseSearch by remember { mutableStateOf(false) }
+    var caisseSearchQuery by remember { mutableStateOf("") }
+    var showCaisseFilterMenu by remember { mutableStateOf(false) }
+    var caisseBalanceFilter by remember { mutableStateOf("all") }
+    val visibleCaisses = remember(uiState.cashRegisterSummaries, caisseSearchQuery, caisseBalanceFilter) {
+        uiState.cashRegisterSummaries.filter { caisse ->
+            val matchesQuery = caisse.name.contains(caisseSearchQuery.trim(), ignoreCase = true) ||
+                caisse.description.contains(caisseSearchQuery.trim(), ignoreCase = true)
+            val matchesBalance = when (caisseBalanceFilter) {
+                "positive" -> caisse.currentBalanceCents > 0L
+                "negative" -> caisse.currentBalanceCents < 0L
+                "zero" -> caisse.currentBalanceCents == 0L
+                else -> true
+            }
+            matchesQuery && matchesBalance
+        }
+    }
 
     // Le bouton flottant de l'application ouvre la création d'une caisse
     LaunchedEffect(createSignal) {
@@ -126,7 +144,7 @@ fun CaissesScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Système de Caisses",
                     style = MaterialTheme.typography.headlineMedium,
@@ -140,7 +158,23 @@ fun CaissesScreen(
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(onClick = { showCaisseSearch = !showCaisseSearch }) {
+                    Icon(Icons.Default.Search, contentDescription = "Rechercher une caisse")
+                }
+                Box {
+                    IconButton(onClick = { showCaisseFilterMenu = true }) {
+                        Icon(Icons.Default.FilterList, contentDescription = "Filtrer les caisses")
+                    }
+                    DropdownMenu(expanded = showCaisseFilterMenu, onDismissRequest = { showCaisseFilterMenu = false }) {
+                        listOf("all" to "Toutes les caisses", "positive" to "Solde positif", "negative" to "Solde négatif", "zero" to "Solde nul").forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { caisseBalanceFilter = value; showCaisseFilterMenu = false }
+                            )
+                        }
+                    }
+                }
                 // Bouton Virement
                 IconButton(
                     onClick = { showTransferDialog = true },
@@ -168,6 +202,19 @@ fun CaissesScreen(
                     )
                 }
             }
+        }
+
+        if (showCaisseSearch) {
+            OutlinedTextField(
+                value = caisseSearchQuery,
+                onValueChange = { caisseSearchQuery = it },
+                modifier = Modifier.fillMaxWidth().testTag("caisse_search_field"),
+                singleLine = true,
+                label = { Text("Rechercher par nom ou description") },
+                trailingIcon = {
+                    TextButton(onClick = { caisseSearchQuery = "" }) { Text("Effacer") }
+                }
+            )
         }
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
@@ -335,7 +382,7 @@ fun CaissesScreen(
         )
 
         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            uiState.cashRegisterSummaries.forEach { caisse ->
+            visibleCaisses.forEach { caisse ->
                 val isSelected = uiState.selectedCashRegisterId == caisse.id
 
                 Card(

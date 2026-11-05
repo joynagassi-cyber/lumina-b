@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Lumina-beta</string>
+    <string name="app_name">Lumina</string>
     <string name="dashboard_title">Bilan Financier</string>
     <string name="timeline_title">Historique</string>
     <string name="export_title">Rapports &amp; Exports</string>

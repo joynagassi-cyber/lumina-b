@@ -1,6 +1,7 @@
 package com.example.data
 
 import androidx.room.Dao
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -10,6 +11,8 @@ import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
+
+const val PROJECT_KIND_PROJECT = "PROJECT"
 
 /**
  * Projet de l'église (construction, mission, équipement…).
@@ -33,7 +36,10 @@ data class ProjectEntity(
     val isClosed: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val isDeleted: Boolean = false
+    val isDeleted: Boolean = false,
+    /** Nature fonctionnelle : projet libre, campagne, événement ou collecte dédiée. */
+    @ColumnInfo(defaultValue = "'PROJECT'")
+    val kind: String = PROJECT_KIND_PROJECT
 )
 
 @Dao

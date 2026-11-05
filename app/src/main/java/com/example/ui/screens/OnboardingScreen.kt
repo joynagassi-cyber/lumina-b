@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.VerifiedUser
@@ -48,6 +49,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.painterResource
+import com.example.R
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -59,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import com.example.data.ChurchProfileEntity
+import com.example.ui.designsystem.LuminaBranding
 import com.example.ui.theme.AccentPalettes
 import com.example.ui.theme.parseHexColor
 import com.example.util.ImageStore
@@ -66,8 +70,9 @@ import com.example.util.ImageStore
 /**
  * Assistant de premier lancement.
  *
- * Trois étapes : présentation, identité de l'église (le nom est le seul champ
- * obligatoire) puis logo et couleur d'accent. Le résultat est enregistré comme
+ * Six étapes guidées : présentation, identité, aperçu des finances, confidentialité,
+ * accès utilisateurs et identité visuelle. Le nom est le seul champ obligatoire.
+ * Le résultat est enregistré comme
  * profil local de l'appareil ; aucune donnée ne quitte le téléphone.
  */
 @Composable
@@ -79,7 +84,7 @@ fun OnboardingScreen(
     finishLabel: String = "Ouvrir mon dossier"
 ) {
     val context = LocalContext.current
-    var step by remember { mutableIntStateOf(startAtStep.coerceIn(0, 2)) }
+    var step by remember { mutableIntStateOf(startAtStep.coerceIn(0, 5)) }
 
     var churchName by remember { mutableStateOf(initialProfile.churchName) }
     var denomination by remember { mutableStateOf(initialProfile.denomination) }
@@ -125,7 +130,7 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                repeat(3) { index ->
+                repeat(6) { index ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -147,7 +152,7 @@ fun OnboardingScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 when (step) {
-                    0 -> WelcomeStep(accentHex = accentHex)
+                    0 -> WelcomeStep()
                     1 -> IdentityStep(
                         churchName = churchName,
                         onChurchNameChange = { churchName = it; errorMessage = null },
@@ -165,6 +170,24 @@ fun OnboardingScreen(
                         onPastorNameChange = { pastorName = it },
                         treasurerName = treasurerName,
                         onTreasurerNameChange = { treasurerName = it }
+                    )
+                    2 -> OnboardingInfoStep(
+                        icon = Icons.Default.Payments,
+                        title = "Une gestion financière claire",
+                        subtitle = "Lumina réunit les opérations et les prévisions pour vous aider à suivre les finances de votre église.",
+                        points = listOf("Entrées et dépenses avec justificatifs", "Caisses et budgets séparés", "Projets, campagnes, événements et collectes affectés")
+                    )
+                    3 -> OnboardingInfoStep(
+                        icon = Icons.Default.VerifiedUser,
+                        title = "Vos données restent sous votre contrôle",
+                        subtitle = "Le dossier fonctionne localement sur cet appareil ; les rapports et exports ne sont générés qu'à votre demande.",
+                        points = listOf("Aucun compte cloud obligatoire", "Sauvegarde chiffrée disponible dans Paramètres", "Vérifiez régulièrement vos sauvegardes")
+                    )
+                    4 -> OnboardingInfoStep(
+                        icon = Icons.Default.Groups,
+                        title = "Une équipe avec des rôles",
+                        subtitle = "Après la configuration, créez votre accès local et choisissez qui peut saisir, gérer ou consulter.",
+                        points = listOf("Code PIN propre à l'utilisateur", "Rôles adaptés aux responsabilités", "Les droits peuvent être ajustés plus tard")
                     )
                     else -> BrandingStep(
                         churchName = churchName,
@@ -216,6 +239,7 @@ fun OnboardingScreen(
                                     step = 2
                                 }
                             }
+                            in 2..4 -> step += 1
                             else -> {
                                 onFinish(
                                     initialProfile.copy(
@@ -239,10 +263,10 @@ fun OnboardingScreen(
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier.testTag("onboarding_primary_button")
                 ) {
-                    Text(if (step == 2) finishLabel else "Continuer", fontWeight = FontWeight.Bold)
+                    Text(if (step == 5) finishLabel else "Continuer", fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.width(6.dp))
                     Icon(
-                        imageVector = if (step == 2) Icons.Default.Check else Icons.Default.ArrowForward,
+                        imageVector = if (step == 5) Icons.Default.Check else Icons.Default.ArrowForward,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp)
                     )
@@ -273,18 +297,65 @@ fun OnboardingScreen(
 }
 
 @Composable
-private fun WelcomeStep(accentHex: String) {
-    val accent = parseHexColor(accentHex)
+private fun OnboardingInfoStep(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    points: List<String>
+) {
     Column(modifier = Modifier.fillMaxWidth()) {
         Box(
             modifier = Modifier
-                .size(64.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(accent),
+                .fillMaxWidth()
+                .height(190.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
         ) {
-            Text("L", color = androidx.compose.ui.graphics.Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
+            Box(
+                Modifier.size(142.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f))
+            )
+            Box(
+                Modifier.size(96.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+            }
         }
+        Spacer(Modifier.height(22.dp))
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(7.dp))
+        Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(16.dp))
+        points.forEach { point ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    Modifier.size(26.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(point, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun WelcomeStep() {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Image(
+            painter = painterResource(id = R.drawable.lumina_brand_icon),
+            contentDescription = "Icône Lumina",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.size(72.dp).clip(RoundedCornerShape(18.dp))
+        )
         Spacer(modifier = Modifier.height(20.dp))
         Text(
             text = "Bienvenue sur Lumina",
@@ -298,6 +369,14 @@ private fun WelcomeStep(accentHex: String) {
                 "caisses, budgets, membres et bilans prêts à présenter.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = LuminaBranding.SLOGAN,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.testTag("lumina_slogan")
         )
         Spacer(modifier = Modifier.height(24.dp))
         WelcomePoint(Icons.Default.Payments, "Trésorerie par caisse", "Chaque franc est rattaché à une caisse, avec virements traçables.")

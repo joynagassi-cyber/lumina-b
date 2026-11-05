@@ -2,6 +2,7 @@ package com.example.data
 
 import com.example.export.BackupSnapshot
 import kotlinx.coroutines.flow.Flow
+import java.util.UUID
 
 class TransactionRepository(
     private val transactionDao: TransactionDao,
@@ -11,7 +12,8 @@ class TransactionRepository(
     private val churchProfileDao: ChurchProfileDao,
     private val memberDao: MemberDao,
     private val userDao: UserDao,
-    private val projectDao: ProjectDao
+    private val projectDao: ProjectDao,
+    val workspaceId: String = "default"
 ) {
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
@@ -423,7 +425,13 @@ class TransactionRepository(
             userDao.deleteAllUsers()
             snapshot.users.forEach { userDao.upsert(it) }
         }
-        snapshot.profile?.let { churchProfileDao.upsert(it) }
+        snapshot.profile?.let { importedProfile ->
+            val existingProfile = churchProfileDao.getProfile()
+            val stableUid = importedProfile.churchUid.ifBlank {
+                existingProfile?.churchUid?.takeIf { it.isNotBlank() } ?: UUID.randomUUID().toString()
+            }
+            churchProfileDao.upsert(importedProfile.copy(churchUid = stableUid))
+        }
         ensureDefaultCategories()
         if (cashRegisterDao.getCount() == 0) {
             cashRegisterDao.insertCashRegister(

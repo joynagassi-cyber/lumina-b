@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Savings
@@ -27,6 +29,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -49,11 +53,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.example.data.ProjectEntity
+import com.example.data.TransactionEntity
+import com.example.data.TransactionType
 import com.example.ui.ProjectSummary
 import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.IncomeGreen
 import com.example.util.CurrencyFormatter
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Projets et fonds affectés : pour chaque projet, ce qui a été collecté,
@@ -62,20 +71,43 @@ import com.example.util.CurrencyFormatter
 @Composable
 fun ProjectsScreen(
     projects: List<ProjectSummary>,
+    transactions: List<TransactionEntity> = emptyList(),
     createSignal: Int = 0,
-    onAddProject: (String, String, Long) -> Unit,
-    onUpdateProject: (ProjectEntity, String, String, Long, Boolean) -> Unit,
+    onAddProject: (String, String, Long, String) -> Unit,
+    onUpdateProject: (ProjectEntity, String, String, Long, Boolean, String) -> Unit,
     onDeleteProject: (ProjectEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var editing by remember { mutableStateOf<ProjectEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<ProjectSummary?>(null) }
+    var selectedProjectId by remember { mutableStateOf<Long?>(null) }
+    val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
 
     LaunchedEffect(createSignal) {
         if (createSignal > 0) creating = true
     }
 
+    if (selectedProject != null) {
+        ProjectDetailPanel(
+            project = selectedProject,
+            transactions = transactions.filter {
+                it.projectId == selectedProject.id && !it.isDeleted && !it.isNeutralised
+            }.sortedByDescending { it.timestamp },
+            onBack = { selectedProjectId = null },
+            onEdit = {
+                editing = ProjectEntity(
+                    id = selectedProject.id,
+                    uid = selectedProject.uid,
+                    name = selectedProject.name,
+                    description = selectedProject.description,
+                    targetCents = selectedProject.targetCents,
+                    isClosed = selectedProject.isClosed,
+                    kind = selectedProject.kind
+                )
+            }
+        )
+    } else {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -154,15 +186,7 @@ fun ProjectsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
-                        .clickable {
-                            editing = ProjectEntity(
-                                id = project.id,
-                                name = project.name,
-                                description = project.description,
-                                targetCents = project.targetCents,
-                                isClosed = project.isClosed
-                            )
-                        }
+                        .clickable { selectedProjectId = project.id }
                         .testTag("project_card_${project.id}"),
                     shape = LuminaTokens.ShapeCard,
                     colors = CardDefaults.cardColors(
@@ -188,6 +212,17 @@ fun ProjectsScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                            }
+                            Surface(
+                                shape = LuminaTokens.ShapeBadge,
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = projectKindLabel(project.kind),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                )
                             }
                             if (project.isClosed) {
                                 Surface(
@@ -253,14 +288,15 @@ fun ProjectsScreen(
             Spacer(modifier = Modifier.height(100.dp))
         }
     }
+    }
 
     if (creating) {
         ProjectDialog(
             title = "Nouveau projet",
             initial = null,
             onDismiss = { creating = false },
-            onConfirm = { name, description, target, _ ->
-                onAddProject(name, description, target)
+            onConfirm = { name, description, target, _, kind ->
+                onAddProject(name, description, target, kind)
                 creating = false
             }
         )
@@ -271,8 +307,8 @@ fun ProjectsScreen(
             title = "Modifier le projet",
             initial = project,
             onDismiss = { editing = null },
-            onConfirm = { name, description, target, closed ->
-                onUpdateProject(project, name, description, target, closed)
+            onConfirm = { name, description, target, closed, kind ->
+                onUpdateProject(project, name, description, target, closed, kind)
                 editing = null
             }
         )
@@ -294,10 +330,12 @@ fun ProjectsScreen(
                         onDeleteProject(
                             ProjectEntity(
                                 id = project.id,
+                                uid = project.uid,
                                 name = project.name,
                                 description = project.description,
                                 targetCents = project.targetCents,
-                                isClosed = project.isClosed
+                                isClosed = project.isClosed,
+                                kind = project.kind
                             )
                         )
                         deleting = null
@@ -311,6 +349,143 @@ fun ProjectsScreen(
             }
         )
     }
+}
+
+@Composable
+private fun ProjectDetailPanel(
+    project: ProjectSummary,
+    transactions: List<TransactionEntity>,
+    onBack: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val dateFormat = remember { SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.FRANCE) }
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = LuminaTokens.SpacingDefault, vertical = LuminaTokens.SpacingMedium)
+            .testTag("project_detail_${project.id}")
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Retour aux projets")
+            }
+            TextButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Modifier")
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = LuminaTokens.ShapeHero,
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+        ) {
+            Column(Modifier.padding(20.dp)) {
+                Text(
+                    if (project.isClosed) "DOSSIER CLÔTURÉ" else projectKindLabel(project.kind).uppercase(Locale.FRANCE),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(project.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                if (project.description.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(project.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Spacer(Modifier.height(18.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    AmountBlock("Dons collectés", project.collectedCents, IncomeGreen)
+                    AmountBlock("Dépenses", project.spentCents, ExpenseRed)
+                }
+                Spacer(Modifier.height(12.dp))
+                Text("Disponible : ${CurrencyFormatter.format(project.balanceCents)}", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
+                if (project.targetCents > 0L) {
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { project.progress },
+                        modifier = Modifier.fillMaxWidth().height(9.dp).clip(LuminaTokens.ShapePill),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(
+                        "Objectif ${CurrencyFormatter.format(project.targetCents)} · ${(project.progress * 100).toInt()} % atteint",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Text("Mouvements rattachés", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(
+            "${transactions.size} écriture(s) · dons et dépenses affectés à ce dossier",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(10.dp))
+
+        if (transactions.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = LuminaTokens.ShapeCard,
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+            ) {
+                Text(
+                    "Aucune écriture rattachée pour le moment. Lors d'une nouvelle saisie, choisissez ce projet dans le champ d'affectation.",
+                    modifier = Modifier.padding(18.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            transactions.forEachIndexed { index, tx ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier.size(38.dp).clip(CircleShape)
+                            .background(if (tx.type == TransactionType.INCOME) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(if (tx.type == TransactionType.INCOME) "+" else "−", fontWeight = FontWeight.Black)
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(tx.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text(
+                            "${tx.category} · ${dateFormat.format(Date(tx.timestamp))}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(
+                        CurrencyFormatter.format(tx.amountCents, withSign = true, isPositive = tx.type == TransactionType.INCOME),
+                        fontWeight = FontWeight.Bold,
+                        color = if (tx.type == TransactionType.INCOME) IncomeGreen else ExpenseRed
+                    )
+                }
+                if (index < transactions.lastIndex) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+        }
+        Spacer(Modifier.height(100.dp))
+    }
+}
+
+private fun projectKindLabel(kind: String): String = when (kind) {
+    "CAMPAIGN" -> "Campagne"
+    "EVENT" -> "Événement"
+    "DONATION" -> "Collecte"
+    else -> "Projet"
 }
 
 @Composable
@@ -335,7 +510,7 @@ private fun ProjectDialog(
     title: String,
     initial: ProjectEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Long, Boolean) -> Unit
+    onConfirm: (String, String, Long, Boolean, String) -> Unit
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var description by remember { mutableStateOf(initial?.description ?: "") }
@@ -343,6 +518,8 @@ private fun ProjectDialog(
         mutableStateOf(if ((initial?.targetCents ?: 0L) > 0L) initial!!.targetCents.toString() else "")
     }
     var isClosed by remember { mutableStateOf(initial?.isClosed ?: false) }
+    var kind by remember { mutableStateOf(initial?.kind ?: "PROJECT") }
+    var kindMenuExpanded by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -364,7 +541,30 @@ private fun ProjectDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+                Box {
+                    TextButton(onClick = { kindMenuExpanded = true }) {
+                        Text("Type : ${projectKindLabel(kind)}")
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir le type")
+                    }
+                    DropdownMenu(
+                        expanded = kindMenuExpanded,
+                        onDismissRequest = { kindMenuExpanded = false }
+                    ) {
+                        listOf(
+                            "PROJECT" to "Projet",
+                            "CAMPAIGN" to "Campagne",
+                            "EVENT" to "Événement",
+                            "DONATION" to "Collecte / don dédié"
+                        ).forEach { (value, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = { kind = value; kindMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
                 OutlinedTextField(
                     value = targetText,
                     onValueChange = { input -> targetText = input.filter { it.isDigit() } },
@@ -389,7 +589,7 @@ private fun ProjectDialog(
             TextButton(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onConfirm(name, description, targetText.toLongOrNull() ?: 0L, isClosed)
+                        onConfirm(name, description, targetText.toLongOrNull() ?: 0L, isClosed, kind)
                     }
                 },
                 enabled = name.isNotBlank()

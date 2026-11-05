@@ -20,6 +20,7 @@ import org.json.JSONObject
  */
 data class SyncBundle(
     val churchName: String = "",
+    val churchUid: String = "",
     val deviceId: String = "",
     val author: String = "",
     val exportedAt: Long = System.currentTimeMillis(),
@@ -43,6 +44,7 @@ object SyncBundleCodec {
         root.put("format", FORMAT)
         root.put("version", VERSION)
         root.put("churchName", bundle.churchName)
+        root.put("churchUid", bundle.churchUid)
         root.put("deviceId", bundle.deviceId)
         root.put("author", bundle.author)
         root.put("exportedAt", bundle.exportedAt)
@@ -212,6 +214,7 @@ object SyncBundleCodec {
 
         return SyncBundle(
             churchName = root.optString("churchName"),
+            churchUid = root.optString("churchUid", ""),
             deviceId = root.optString("deviceId"),
             author = root.optString("author"),
             exportedAt = root.optLong("exportedAt"),

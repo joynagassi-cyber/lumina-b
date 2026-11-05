@@ -6,9 +6,14 @@
 les 6 écrans Compose, composants, export PDF/CSV), + analyse de la configuration de build.
 **Limite importante :** aucun build n'a pu être exécuté dans cet environnement (pas de JDK
 ni de SDK Android disponibles, accès réseau limité). Les conclusions portent donc sur le
-**code et la configuration**, pas sur une exécution réelle. La CI ajoutée
-(`.github/workflows/android-ci.yml`) sert précisément à valider la compilation et les tests ;
-si elle est rouge, le log indiquera la ligne exacte.
+**code et la configuration**, pas sur une exécution réelle.
+
+> **Mise à jour du 5 novembre 2026 — travail en cours, non validé pour release.** Cet audit
+> décrit l'état initial du 4 novembre et ses verdicts ne valent pas approbation actuelle.
+> Depuis, les dossiers multi-églises, les chemins et contrôles d'identité, ainsi que les essais
+> temporaires de démonstration ont été implémentés avec des tests ciblés. Le JDK manque dans
+> l'environnement : build et tests ne sont toujours pas exécutés. Aucune release n'est autorisée
+> avant compilation et validation de ces scénarios.
 
 ---
 
@@ -35,7 +40,7 @@ Légende : ✅ conforme · 🟡 fonctionne mais incomplet · ❌ absent
 | Fonctionnalité | État | Détail |
 |---|---|---|
 | Saisie d'une opération (entrée/sortie, montant, catégorie, caisse, date, note) | ✅ | `AddTransactionDialog.kt` (558 l.) : montant > 0 validé, catégorie personnalisée possible, sélection de caisse, formatage `.`/`,` |
-| Persistance locale 100 % hors ligne (Room/SQLite) | ✅ | `LuminaDatabase` v4, 4 entités, `Flow` réactifs. **Aucune permission INTERNET** dans le manifeste : l'app ne peut pas exfiltrer de données |
+| Persistance locale hors ligne (Room/SQLite) | ✅ *(état du code, non revalidé en build)* | `LuminaDatabase` v10, 8 entités, migrations 5→10 et dossiers désormais stockés dans des fichiers Room distincts. Les migrations et l'étanchéité doivent encore être testées sur des bases réelles. |
 | Suppression d'opération | ✅ | Confirmation + recalcul immédiat des soldes |
 | **Édition** d'une opération | ❌ | `updateTransaction()` existe dans le DAO mais n'est **jamais appelé** : il faut supprimer puis ressaisir |
 | Bilan : total entrées / sorties / solde net / taux d'épargne | ✅ | Calculs en `Long` (arithmétique entière, déterministe) |
@@ -51,7 +56,7 @@ Légende : ✅ conforme · 🟡 fonctionne mais incomplet · ❌ absent
 | 4 modes d'affichage des montants (standard, abrégé k/M, comptable, discret) | 🟡 | Fonctionnels, non persistés |
 | Export PDF multi-pages (en-tête, KPI, tableau, pied de page) | ✅ | `ReportExporter.kt` via `PdfDocument`, partage FileProvider |
 | Export CSV compatible Excel (BOM UTF-8, séparateur `;`) | ✅ | Voir P2-2 pour les détails de robustesse |
-| **Export XLSX** natif | ❌ | Le libellé « Excel » désigne le CSV ; aucun `.xlsx` généré |
+| **Export XLSX** natif | ✅ *(ajouté dans cette branche, non exécuté)* | Classeur OOXML `.xlsx` avec cellules numériques/texte typées ; validation d’ouverture par test ZIP/XML en attente du JDK |
 | Partage système (WhatsApp, e-mail, Drive…) | ✅ | `Intent.ACTION_SEND` + `FileProvider` correctement déclaré |
 | Sauvegarde / restauration interne de la base | ❌ | Seule la sauvegarde Android système existe (et elle est grande ouverte, P1-7) |
 
@@ -141,15 +146,13 @@ L'interface parle de contrainte ; le comportement réel est purement indicatif.
 → *Correctif* : utiliser le seuil stocké dans `CategoryBudgetProgress`, et refuser (ou avertir
 avec confirmation) un `addTransaction` qui dépassse un budget `isHardLimit = true`.
 
-**P1-6 · Données de démonstration injectées dans une app réelle**
-`LuminaDatabase.populateInitialData()` (l. 65-205) crée au premier lancement :
-3 caisses avec **1 500 000 / 350 000 / 150 000 FCFA** de solde initial, 12 catégories,
-4 budgets et 6 transactions fictives (dont un « Virement Salaire Mensuel » de 1 250 000 FCFA).
-Sur un téléphone personnel, l'utilisateur découvre donc **un patrimoine qui n'est pas le sien**,
-et doit tout supprimer à la main — les soldes de caisse ne peuvent pas être « annulés » sans
-supprimer la caisse.
-→ *Correctif* : conserver le seed uniquement en debug (`if (BuildConfig.DEBUG)`) ou remplacer
-par une caisse unique à 0 FCFA. **À trancher avant publication.**
+**P1-6 · Données de démonstration injectées dans une app réelle (constat initial — corrigé dans cette branche)**
+Au moment de l'audit initial, le seed Room créait au premier lancement des caisses, budgets et
+transactions fictifs mêlés au vrai dossier. Le seed métier a été retiré : les exemples sont
+maintenant fournis par `DemoDataset` en mémoire, séparés de Room. Une opération d'essai peut
+être ajoutée en mémoire (avec justificatifs isolés sous le namespace `demo`) puis abandonnée à
+la sortie ; elle ne modifie pas le dossier réel. Un test d'isolation a été ajouté, mais reste à
+exécuter avec le build.
 
 **P1-7 · Sauvegarde cloud non maîtrisée et données financières en clair**
 `AndroidManifest.xml` l. 6 : `android:allowBackup="true"`, avec

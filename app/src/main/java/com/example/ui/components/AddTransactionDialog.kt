@@ -22,6 +22,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +83,7 @@ fun AddTransactionDialog(
     initial: TransactionEntity? = null,
     /** Projets ouverts à l'affectation (fonds fléchés). */
     projects: List<ProjectEntity> = emptyList(),
+    workspaceId: String = "default",
     onDismissRequest: () -> Unit,
     onOpenCategoryManager: () -> Unit = {},
     onSaveTransaction: (
@@ -102,7 +106,7 @@ fun AddTransactionDialog(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            com.example.util.ImageStore.uriToReceiptFile(context, uri)?.let { receiptPath = it }
+            com.example.util.ImageStore.uriToReceiptFile(context, uri, workspaceId)?.let { receiptPath = it }
         }
     }
     var amountText by remember { mutableStateOf(initial?.amountCents?.toString() ?: "") }
@@ -136,7 +140,9 @@ fun AddTransactionDialog(
     }
 
     var selectedProjectId by remember { mutableLongStateOf(initial?.projectId ?: 0L) }
+    var projectMenuExpanded by remember { mutableStateOf(false) }
     var customCategory by remember { mutableStateOf("") }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
     var isCustomCategorySelected by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf(initial?.note ?: "") }
     var selectedTimestamp by remember {
@@ -325,7 +331,7 @@ fun AddTransactionDialog(
                     }
                 }
 
-                val openProjects = projects.filter { !it.isClosed }
+                val openProjects = projects.filter { !it.isClosed || it.id == selectedProjectId }
                 if (openProjects.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -335,31 +341,57 @@ fun AddTransactionDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(6.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        FilterChip(
-                            selected = selectedProjectId == 0L,
-                            onClick = { selectedProjectId = 0L },
-                            label = { Text("Aucun", fontSize = 12.sp) },
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        openProjects.forEach { project ->
-                            val isSelected = selectedProjectId == project.id
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedProjectId = project.id },
-                                label = {
-                                    Text(
-                                        project.name,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
-                                },
-                                shape = RoundedCornerShape(8.dp)
+                    val selectedProject = openProjects.firstOrNull { it.id == selectedProjectId }
+                    Box {
+                        Button(
+                            onClick = { projectMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = MaterialTheme.colorScheme.onSurface
                             )
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    selectedProject?.let { project ->
+                                        val kindLabel = when (project.kind) {
+                                            "CAMPAIGN" -> "Campagne"
+                                            "EVENT" -> "Événement"
+                                            "DONATION" -> "Collecte"
+                                            else -> "Projet"
+                                        }
+                                        "$kindLabel · ${project.name}"
+                                    } ?: "Aucun dossier affecté",
+                                    maxLines = 1
+                                )
+                                Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir un dossier")
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = projectMenuExpanded,
+                            onDismissRequest = { projectMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Aucun dossier affecté") },
+                                onClick = { selectedProjectId = 0L; projectMenuExpanded = false }
+                            )
+                            openProjects.forEach { project ->
+                                val kindLabel = when (project.kind) {
+                                    "CAMPAIGN" -> "Campagne"
+                                    "EVENT" -> "Événement"
+                                    "DONATION" -> "Collecte"
+                                    else -> "Projet"
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("$kindLabel · ${project.name}") },
+                                    onClick = { selectedProjectId = project.id; projectMenuExpanded = false }
+                                )
+                            }
                         }
                     }
                 }
@@ -438,56 +470,65 @@ fun AddTransactionDialog(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
 
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    filteredCategories.forEach { cat ->
-                        val isSelected = !isCustomCategorySelected && selectedCategory == cat.name
-                        val dotColor = parseHexColor(cat.colorHex)
-
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                selectedCategory = cat.name
-                                isCustomCategorySelected = false
-                            },
-                            leadingIcon = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(dotColor)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { categoryMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (!isCustomCategorySelected) {
+                                    Box(
+                                        Modifier.size(10.dp).clip(CircleShape)
+                                            .background(parseHexColor(filteredCategories.firstOrNull { it.name == selectedCategory }?.colorHex ?: "#64748B"))
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Text(
+                                    if (isCustomCategorySelected) customCategory.ifBlank { "Catégorie personnalisée" } else selectedCategory,
+                                    maxLines = 1
                                 )
-                            },
-                            label = { Text(cat.name, fontSize = 12.sp) },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = MaterialTheme.colorScheme.outline,
-                                selectedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                borderWidth = 1.dp,
-                                selectedBorderWidth = 1.5.dp
+                            }
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir une catégorie")
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = categoryMenuExpanded,
+                        onDismissRequest = { categoryMenuExpanded = false }
+                    ) {
+                        filteredCategories.forEach { cat ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(Modifier.size(10.dp).clip(CircleShape).background(parseHexColor(cat.colorHex)))
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(cat.name)
+                                    }
+                                },
+                                onClick = {
+                                    selectedCategory = cat.name
+                                    isCustomCategorySelected = false
+                                    categoryMenuExpanded = false
+                                }
                             )
+                        }
+                        DropdownMenuItem(
+                            text = { Text("+ Créer une catégorie ponctuelle") },
+                            onClick = {
+                                isCustomCategorySelected = true
+                                categoryMenuExpanded = false
+                            }
                         )
                     }
-
-                    FilterChip(
-                        selected = isCustomCategorySelected,
-                        onClick = { isCustomCategorySelected = true },
-                        label = { Text("+ Autre", fontSize = 12.sp) },
-                        shape = RoundedCornerShape(8.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            selectedLabelColor = MaterialTheme.colorScheme.onSurface
-                        )
-                    )
                 }
 
                 if (isCustomCategorySelected) {

@@ -57,6 +57,7 @@ object BackupCodec {
                 "profile",
                 JSONObject().apply {
                     put("churchName", p.churchName)
+                    put("churchUid", p.churchUid)
                     put("denomination", p.denomination)
                     put("city", p.city)
                     put("address", p.address)
@@ -203,6 +204,7 @@ object BackupCodec {
                             put("createdAt", p.createdAt)
                             put("updatedAt", p.updatedAt)
                             put("isDeleted", p.isDeleted)
+                            put("kind", p.kind)
                         }
                     )
                 }
@@ -259,6 +261,7 @@ object BackupCodec {
             ChurchProfileEntity(
                 id = 1L,
                 churchName = p.optString("churchName", ""),
+                churchUid = p.optString("churchUid", ""),
                 denomination = p.optString("denomination", ""),
                 city = p.optString("city", ""),
                 address = p.optString("address", ""),
@@ -363,7 +366,8 @@ object BackupCodec {
                     isClosed = o.optBoolean("isClosed", false),
                     createdAt = o.optLong("createdAt", 0L),
                     updatedAt = o.optLong("updatedAt", 0L),
-                    isDeleted = o.optBoolean("isDeleted", false)
+                    isDeleted = o.optBoolean("isDeleted", false),
+                    kind = o.optString("kind", "PROJECT")
                 )
             },
             transactions = array(root, "transactions").map { o ->

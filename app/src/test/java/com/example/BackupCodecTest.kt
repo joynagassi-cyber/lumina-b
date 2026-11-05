@@ -62,7 +62,7 @@ class BackupCodecTest {
             CashRegisterEntity(id = 2, name = "Compte bancaire", iconType = "bank")
         ),
         projects = listOf(
-            ProjectEntity(id = 42, name = "Construction du temple", targetCents = 5_000_000)
+            ProjectEntity(id = 42, name = "Construction du temple", targetCents = 5_000_000, kind = "CAMPAIGN")
         ),
         transactions = listOf(
             TransactionEntity(
@@ -99,11 +99,13 @@ class BackupCodecTest {
         val relu = BackupCodec.decode(BackupCodec.encode(original))
 
         assertEquals(original.churchName, relu.churchName)
+        assertEquals(original.profile?.churchUid, relu.profile?.churchUid)
         assertEquals(original.createdAt, relu.createdAt)
         assertEquals(2, relu.transactionCount)
         assertEquals(1, relu.memberCount)
         assertEquals(2, relu.registers.size)
         assertEquals(1, relu.projects.size)
+        assertEquals("CAMPAIGN", relu.projects.single().kind)
         assertEquals(1, relu.budgets.size)
         assertEquals(1, relu.users.size)
 

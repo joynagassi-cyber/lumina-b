@@ -19,12 +19,14 @@ val OledOnSurface = Color(0xFFFAFAFA)
 val OledOnSurfaceVariant = Color(0xFFA1A1AA)
 
 // Thème Monochrome Clair (Blanc pur #FFFFFF)
-val PureLightBackground = Color(0xFFFFFFFF)
-val PureLightSurface = Color(0xFFFFFFFF)
-val PureLightSurfaceVariant = Color(0xFFF4F4F5)
-val PureLightBorder = Color(0xFFE4E4E7)
-val PureLightOnSurface = Color(0xFF09090B)
-val PureLightOnSurfaceVariant = Color(0xFF71717A)
+// Clair doux (plutôt qu'un blanc éblouissant) : garde une hiérarchie visible
+// entre le fond de page, les cartes et les surfaces sur tous les écrans.
+val PureLightBackground = Color(0xFFF4F5F7)
+val PureLightSurface = Color(0xFFFEFEFF)
+val PureLightSurfaceVariant = Color(0xFFEAECF0)
+val PureLightBorder = Color(0xFFD9DDE5)
+val PureLightOnSurface = Color(0xFF17191F)
+val PureLightOnSurfaceVariant = Color(0xFF626875)
 
 // Couleurs fonctionnelles minimalistes monochromes / indigo
 val IncomeIndigo = Color(0xFF4338CA)

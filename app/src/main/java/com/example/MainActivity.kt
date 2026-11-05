@@ -13,6 +13,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -86,6 +87,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -95,9 +97,12 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.data.LuminaDatabase
 import com.example.data.TransactionRepository
+import com.example.data.ChurchWorkspace
+import com.example.data.ChurchWorkspaceCatalog
 import com.example.ui.FinancialUiState
 import com.example.ui.FinancialViewModel
 import com.example.ui.FinancialViewModelFactory
+import com.example.ui.designsystem.LuminaBranding
 import com.example.ui.components.AddTransactionDialog
 import com.example.ui.components.CategoryManagerDialog
 import com.example.ui.screens.BudgetScreen
@@ -113,6 +118,7 @@ import androidx.compose.material.icons.filled.Savings
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TeamSyncScreen
 import com.example.ui.screens.TimelineScreen
+import com.example.ui.screens.WorkspacePickerDialog
 import com.example.ui.theme.LuminaTheme
 import com.example.ui.theme.ThemeMode
 import com.example.util.AmountDisplayMode
@@ -120,7 +126,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 enum class AppScreen(val title: String) {
-    DASHBOARD("Rapport"),
+    DASHBOARD("Tableau de bord"),
     CAISSES("Caisses"),
     BUDGETS("Budgets"),
     MEMBERS("Membres"),
@@ -137,7 +143,13 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         com.example.notifications.LuminaNotifier.ensureChannel(applicationContext)
-        val database = LuminaDatabase.getDatabase(applicationContext, lifecycleScope)
+        val workspaceCatalog = ChurchWorkspaceCatalog(applicationContext)
+        val activeWorkspace = workspaceCatalog.ensureInitialWorkspace()
+        val database = LuminaDatabase.getDatabaseNamed(
+            applicationContext,
+            activeWorkspace.databaseName,
+            lifecycleScope
+        )
         val repository = TransactionRepository(
             database.transactionDao(),
             database.categoryDao(),
@@ -146,7 +158,8 @@ class MainActivity : ComponentActivity() {
             database.churchProfileDao(),
             database.memberDao(),
             database.userDao(),
-            database.projectDao()
+            database.projectDao(),
+            workspaceId = activeWorkspace.id
         )
 
         setContent {
@@ -154,12 +167,32 @@ class MainActivity : ComponentActivity() {
                 factory = FinancialViewModelFactory(repository)
             )
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            LaunchedEffect(activeWorkspace.id, uiState.profile.churchName, uiState.profile.onboardingCompleted) {
+                if (uiState.profile.onboardingCompleted) {
+                    workspaceCatalog.updateDisplayName(activeWorkspace.id, uiState.profile.displayName)
+                }
+            }
 
             LuminaTheme(
                 themeMode = uiState.themeMode,
                 accentHex = uiState.profile.accentColorHex
             ) {
-                LuminaApp(viewModel = viewModel, uiState = uiState)
+                LuminaApp(
+                    viewModel = viewModel,
+                    uiState = uiState,
+                    workspaces = workspaceCatalog.getWorkspaces(),
+                    activeWorkspace = activeWorkspace,
+                    onSelectWorkspace = { id ->
+                        workspaceCatalog.setActiveWorkspace(id)
+                        viewModelStore.clear()
+                        recreate()
+                    },
+                    onCreateWorkspace = {
+                        workspaceCatalog.createWorkspace()
+                        viewModelStore.clear()
+                        recreate()
+                    }
+                )
             }
         }
     }
@@ -169,7 +202,11 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LuminaApp(
     viewModel: FinancialViewModel,
-    uiState: FinancialUiState
+    uiState: FinancialUiState,
+    workspaces: List<ChurchWorkspace>,
+    activeWorkspace: ChurchWorkspace,
+    onSelectWorkspace: (String) -> Unit,
+    onCreateWorkspace: () -> Unit
 ) {
     val context = LocalContext.current
     var currentScreen by remember { mutableStateOf(AppScreen.DASHBOARD) }
@@ -177,6 +214,7 @@ fun LuminaApp(
     var showCategoryManager by remember { mutableStateOf(false) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showChurchProfile by remember { mutableStateOf(false) }
+    var showWorkspacePicker by remember { mutableStateOf(false) }
     // Incrémenté à chaque appui sur le bouton flottant : chaque page ouvre sa propre création
     var createSignal by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var transactionToEdit by remember { mutableStateOf<com.example.data.TransactionEntity?>(null) }
@@ -189,6 +227,42 @@ fun LuminaApp(
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val selectPeriod: (com.example.ui.PeriodFilter) -> Unit = { period ->
+        if (period != com.example.ui.PeriodFilter.PERSONNALISEE) {
+            viewModel.setPeriod(period)
+        } else {
+            val today = java.util.Calendar.getInstance()
+            val firstPicker = android.app.DatePickerDialog(
+                context,
+                { _, year, month, day ->
+                    val start = java.util.Calendar.getInstance().apply {
+                        set(year, month, day, 0, 0, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    val endSeed = java.util.Calendar.getInstance().let { current ->
+                        if (current.timeInMillis < start.timeInMillis) start else current
+                    }
+                    android.app.DatePickerDialog(
+                        context,
+                        { _, endYear, endMonth, endDay ->
+                            val end = java.util.Calendar.getInstance().apply {
+                                set(endYear, endMonth, endDay, 23, 59, 59)
+                                set(java.util.Calendar.MILLISECOND, 999)
+                            }
+                            viewModel.setCustomPeriod(start.timeInMillis, end.timeInMillis)
+                        },
+                        endSeed.get(java.util.Calendar.YEAR),
+                        endSeed.get(java.util.Calendar.MONTH),
+                        endSeed.get(java.util.Calendar.DAY_OF_MONTH)
+                    ).apply { setTitle("Choisir la date de fin") }.show()
+                },
+                today.get(java.util.Calendar.YEAR),
+                today.get(java.util.Calendar.MONTH),
+                today.get(java.util.Calendar.DAY_OF_MONTH)
+            ).apply { setTitle("Choisir la date de début") }
+            firstPicker.show()
+        }
+    }
 
     // Gestion du retour système
     BackHandler(enabled = drawerState.isOpen || currentScreen != AppScreen.DASHBOARD) {
@@ -199,12 +273,15 @@ fun LuminaApp(
         }
     }
 
-    // Copie de secours silencieuse au démarrage (une fois par jour au plus)
-    LaunchedEffect(Unit) {
-        viewModel.runAutoBackup(context)
+    // La sauvegarde automatique ne s'exécute qu'après connexion à un dossier réel,
+    // jamais sur l'écran de connexion ni pendant la démonstration.
+    LaunchedEffect(uiState.isDemoMode, uiState.currentUser?.id) {
+        if (!uiState.isDemoMode && uiState.currentUser != null) {
+            viewModel.runAutoBackup(context)
+        }
     }
-    val lastAutoBackupLabel = remember(uiState.transactions.size, uiState.members.size) {
-        val file = com.example.export.BackupService.latestAutoFile(context)
+    val lastAutoBackupLabel = remember(activeWorkspace.id, uiState.transactions.size, uiState.members.size) {
+        val file = com.example.export.BackupService.latestAutoFile(context, activeWorkspace.id)
         file?.let {
             android.text.format.DateFormat
                 .format("dd/MM/yyyy 'à' HH:mm", it.lastModified())
@@ -251,6 +328,22 @@ fun LuminaApp(
         }
     }
 
+    if (showWorkspacePicker) {
+        WorkspacePickerDialog(
+            workspaces = workspaces,
+            activeWorkspaceId = activeWorkspace.id,
+            onDismiss = { showWorkspacePicker = false },
+            onSelectWorkspace = { id ->
+                showWorkspacePicker = false
+                if (id != activeWorkspace.id) onSelectWorkspace(id)
+            },
+            onCreateWorkspace = {
+                showWorkspacePicker = false
+                onCreateWorkspace()
+            }
+        )
+    }
+
     // Premier lancement : assistant de création du profil de l'église
     if (!uiState.profile.onboardingCompleted) {
         OnboardingScreen(
@@ -266,7 +359,9 @@ fun LuminaApp(
             churchName = uiState.profile.churchName,
             users = uiState.users,
             onLogin = { id, pin -> viewModel.login(id, pin) },
-            onCreateFirstUser = { name, role, pin -> viewModel.createFirstUser(name, role, pin) }
+            onCreateFirstUser = { name, role, pin -> viewModel.createFirstUser(name, role, pin) },
+            onStartDemo = { viewModel.startDemoMode(context) },
+            onChooseWorkspace = { showWorkspacePicker = true }
         )
         return
     }
@@ -288,30 +383,21 @@ fun LuminaApp(
                         .padding(20.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.primary),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "L",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 20.sp
-                            )
-                        }
+                        Image(
+                            painter = painterResource(id = R.drawable.lumina_brand_icon),
+                            contentDescription = "Icône Lumina",
+                            modifier = Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))
+                        )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Lumina-beta",
+                                text = "Lumina",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Gestion financière de l'église",
+                                text = "Dossier : ${uiState.profile.displayName}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -367,9 +453,54 @@ fun LuminaApp(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                if (!uiState.isDemoMode) {
+                    NavigationDrawerItem(
+                        label = { Text("Dossiers d'église") },
+                        icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            showWorkspacePicker = true
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("open_workspace_picker_drawer")
+                    )
+
+                }
+
+                if (!uiState.isDemoMode) {
+                    NavigationDrawerItem(
+                        label = { Text("Explorer la démo (essais temporaires)") },
+                        icon = { Icon(Icons.Default.Visibility, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            viewModel.startDemoMode(context)
+                            currentScreen = AppScreen.DASHBOARD
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("start_read_only_demo_drawer")
+                    )
+                }
+                if (uiState.isDemoMode) {
+                    NavigationDrawerItem(
+                        label = { Text("Quitter la démo et revenir à mon profil") },
+                        icon = { Icon(Icons.Default.VisibilityOff, contentDescription = null) },
+                        selected = false,
+                        onClick = {
+                            viewModel.exitDemoMode(context)
+                            currentScreen = AppScreen.DASHBOARD
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("exit_read_only_demo")
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                }
+
                 // Éléments de navigation du tiroir
                 NavigationDrawerItem(
-                    label = { Text("Rapport de gestion", fontWeight = FontWeight.SemiBold) },
+                    label = { Text("Tableau de bord", fontWeight = FontWeight.SemiBold) },
                     icon = { Icon(Icons.Default.AccountBalanceWallet, contentDescription = null) },
                     selected = currentScreen == AppScreen.DASHBOARD,
                     onClick = {
@@ -514,7 +645,7 @@ fun LuminaApp(
                         .padding(20.dp)
                 ) {
                     Text(
-                        text = "Lumina-beta • Pure OLED & Indigo",
+                        text = "Lumina • ${LuminaBranding.SLOGAN}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
@@ -537,7 +668,7 @@ fun LuminaApp(
                     title = {
                         Text(
                             text = when (currentScreen) {
-                                AppScreen.DASHBOARD -> "Lumina-beta"
+                                AppScreen.DASHBOARD -> "Tableau de bord"
                                 AppScreen.CAISSES -> "Caisses"
                                 AppScreen.BUDGETS -> "Budgets"
                                 AppScreen.TIMELINE -> "Historique"
@@ -643,7 +774,7 @@ fun LuminaApp(
                                 selected = currentScreen == AppScreen.DASHBOARD,
                                 onClick = { currentScreen = AppScreen.DASHBOARD },
                                 icon = Icons.Rounded.AccountBalanceWallet,
-                                label = "Rapport",
+                                label = "Finance",
                                 testTag = "nav_item_dashboard",
                                 modifier = Modifier.weight(1f)
                             )
@@ -684,18 +815,22 @@ fun LuminaApp(
                 }
             },
             floatingActionButton = {
-                // Lecture seule : aucune création possible.
-                // Le bouton crée ce que la page affiche : caisse, budget, membre ou opération.
-                val fabLabel = when (currentScreen) {
+                // En démo, seul l'essai d'une écriture temporaire est proposé ;
+                // aucun bouton ne peut modifier la base réelle.
+                val temporaryDemoAction = uiState.isDemoMode &&
+                    currentScreen in setOf(AppScreen.DASHBOARD, AppScreen.TIMELINE)
+                val fabLabel = if (uiState.isDemoMode) "Essayer" else when (currentScreen) {
                     AppScreen.CAISSES -> "Caisse"
                     AppScreen.BUDGETS -> "Budget"
                     AppScreen.MEMBERS -> "Membre"
                     AppScreen.PROJECTS -> "Projet"
                     else -> "Opération"
                 }
-                if (uiState.canWrite) FloatingActionButton(
+                if (uiState.canWrite || temporaryDemoAction) FloatingActionButton(
                     onClick = {
-                        when (currentScreen) {
+                        if (uiState.isDemoMode) {
+                            showAddDialog = true
+                        } else when (currentScreen) {
                             AppScreen.CAISSES, AppScreen.BUDGETS, AppScreen.MEMBERS, AppScreen.PROJECTS -> createSignal++
                             else -> showAddDialog = true
                         }
@@ -711,7 +846,7 @@ fun LuminaApp(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Add,
-                            contentDescription = "Créer : $fabLabel",
+                            contentDescription = if (uiState.isDemoMode) "Essayer une écriture temporaire" else "Créer : $fabLabel",
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -729,7 +864,7 @@ fun LuminaApp(
                 when (screen) {
                     AppScreen.DASHBOARD -> DashboardScreen(
                         uiState = uiState,
-                        onPeriodSelected = { viewModel.setPeriod(it) },
+                        onPeriodSelected = { selectPeriod(it) },
                         onNavigateToTimeline = { currentScreen = AppScreen.TIMELINE },
                         onNavigateToBudgets = { currentScreen = AppScreen.BUDGETS },
                         onNavigateToCaisses = { currentScreen = AppScreen.CAISSES },
@@ -771,12 +906,13 @@ fun LuminaApp(
                     )
                     AppScreen.PROJECTS -> ProjectsScreen(
                         projects = uiState.projectSummaries,
+                        transactions = uiState.allTransactions,
                         createSignal = createSignal,
-                        onAddProject = { name, description, target ->
-                            viewModel.addProject(name, description, target)
+                        onAddProject = { name, description, target, kind ->
+                            viewModel.addProject(name, description, target, kind)
                         },
-                        onUpdateProject = { project, name, description, target, closed ->
-                            viewModel.updateProject(project, name, description, target, closed)
+                        onUpdateProject = { project, name, description, target, closed, kind ->
+                            viewModel.updateProject(project, name, description, target, closed, kind)
                         },
                         onDeleteProject = { project -> viewModel.deleteProject(project) }
                     )
@@ -787,7 +923,7 @@ fun LuminaApp(
                         onAmountRangeChange = { min, max -> viewModel.setAmountRange(min, max) },
                         onSortModeSelected = { viewModel.setSortMode(it) },
                         onResetFilters = { viewModel.clearFilters() },
-                        onPeriodSelected = { viewModel.setPeriod(it) },
+                        onPeriodSelected = { selectPeriod(it) },
                         onTypeFilterSelected = { viewModel.setTypeFilter(it) },
                         onSearchQueryChange = { viewModel.setSearchQuery(it) },
                         onDeleteTransaction = { viewModel.deleteTransaction(it) },
@@ -796,9 +932,13 @@ fun LuminaApp(
                     )
                     AppScreen.EXPORT -> ExportScreen(
                         uiState = uiState,
-                        onPeriodSelected = { viewModel.setPeriod(it) },
+                        onPeriodSelected = { selectPeriod(it) },
                         onExportPdf = { viewModel.exportPdf(context) },
-                        onExportCsv = { viewModel.exportCsv(context) }
+                        onExportCsv = { viewModel.exportCsv(context) },
+                        onExportExcel = { viewModel.exportExcel(context) },
+                        onExportMembersPdf = { viewModel.exportMembersPdf(context) },
+                        onExportBudgetPdf = { viewModel.exportBudgetPdf(context) },
+                        onExportHistoryPdf = { viewModel.exportHistoryPdf(context) }
                     )
                     AppScreen.TEAM -> TeamSyncScreen(
                         uiState = uiState,
@@ -815,12 +955,13 @@ fun LuminaApp(
                                 "Échange de données Lumina"
                             )
                         },
-                        onLogout = { viewModel.logout() }
+                        onLogout = { viewModel.logout(context) }
                     )
                     AppScreen.SETTINGS -> SettingsScreen(
                         uiState = uiState,
                         onEditChurchProfile = { showChurchProfile = true },
                         onThemeModeChange = { viewModel.setThemeMode(it) },
+                        onAccentColorChange = { viewModel.setAccentColor(it) },
                         onAmountDisplayModeChange = { viewModel.setAmountDisplayMode(it) },
                         onNavigateToCaisses = { currentScreen = AppScreen.CAISSES },
                         onNavigateToCategories = { showCategoryManager = true },
@@ -868,7 +1009,7 @@ fun LuminaApp(
                                 }
                             }
                         },
-                        lastAutoBackupLabel = lastAutoBackupLabel
+                        lastAutoBackupLabel = if (uiState.isDemoMode) "" else lastAutoBackupLabel
                     )
                 }
             }
@@ -904,6 +1045,7 @@ fun LuminaApp(
             categories = uiState.categories,
             cashRegisters = uiState.cashRegisters,
             projects = uiState.projects,
+            workspaceId = if (uiState.isDemoMode) "demo" else uiState.workspaceId,
             defaultCashRegisterId = uiState.selectedCashRegisterId,
             onDismissRequest = { showAddDialog = false },
             onOpenCategoryManager = {
@@ -932,6 +1074,7 @@ fun LuminaApp(
             categories = uiState.categories,
             cashRegisters = uiState.cashRegisters,
             projects = uiState.projects,
+            workspaceId = if (uiState.isDemoMode) "demo" else uiState.workspaceId,
             defaultCashRegisterId = tx.cashRegisterId,
             initial = tx,
             onDismissRequest = { transactionToEdit = null },

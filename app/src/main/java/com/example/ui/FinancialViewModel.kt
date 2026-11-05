@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.BudgetEntity
+import com.example.data.DemoDataset
 import com.example.data.CashRegisterEntity
 import com.example.data.CategoryEntity
 import com.example.data.ChurchProfileEntity
@@ -32,6 +33,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -42,7 +45,10 @@ enum class PeriodFilter(val label: String) {
     CE_MOIS("Ce mois"),
     MOIS_DERNIER("Mois dernier"),
     TROIS_MOIS("3 derniers mois"),
+    QUATRE_MOIS("4 derniers mois"),
+    SIX_MOIS("6 derniers mois"),
     CETTE_ANNEE("Cette année"),
+    PERSONNALISEE("Période personnalisée"),
     TOUT("Tout")
 }
 
@@ -112,12 +118,14 @@ data class RegisterStatement(
 /** Situation d'un projet : collecté, dépensé, solde disponible. */
 data class ProjectSummary(
     val id: Long,
+    val uid: String,
     val name: String,
     val description: String,
     val targetCents: Long,
     val collectedCents: Long,
     val spentCents: Long,
-    val isClosed: Boolean
+    val isClosed: Boolean,
+    val kind: String = "PROJECT"
 ) {
     val balanceCents: Long get() = collectedCents - spentCents
     val progress: Float
@@ -164,6 +172,8 @@ data class BilanSnapshot(
 
 data class FinancialUiState(
     val transactions: List<TransactionEntity> = emptyList(),
+    /** Journal complet pour les fiches, indépendamment des filtres de l'historique. */
+    val allTransactions: List<TransactionEntity> = emptyList(),
     val periodTransactions: List<TransactionEntity> = emptyList(),
     val totalIncomeCents: Long = 0,
     val totalExpenseCents: Long = 0,
@@ -203,6 +213,8 @@ data class FinancialUiState(
     val canWrite: Boolean = true,
     val canDelete: Boolean = true,
     val canManageUsers: Boolean = true,
+    val isDemoMode: Boolean = false,
+    val workspaceId: String = "default",
     val isLoading: Boolean = false
 )
 
@@ -217,6 +229,11 @@ class FinancialViewModel(
     private val monthDisplayFormat = SimpleDateFormat("MMMM yyyy", Locale.FRANCE)
 
     private val _selectedPeriod = MutableStateFlow(PeriodFilter.CE_MOIS)
+    private val _customPeriodRange = MutableStateFlow<Pair<Long, Long>?>(null)
+    private val _demoMode = MutableStateFlow(false)
+    private val _demoProfile = MutableStateFlow(DemoDataset.profile)
+    private val _demoTransactions = MutableStateFlow(DemoDataset.transactions)
+    private val _demoReturnUser = MutableStateFlow<UserEntity?>(null)
     private val _selectedTypeFilter = MutableStateFlow<TransactionType?>(null)
     private val _selectedCategoryFilter = MutableStateFlow<String?>(null)
     private val _minAmountCents = MutableStateFlow(0L)
@@ -255,19 +272,27 @@ class FinancialViewModel(
         _sortMode,
         repository.allUsers,
         _currentUser,
-        repository.allProjects
+        repository.allProjects,
+        _customPeriodRange,
+        _demoMode,
+        _demoProfile,
+        _demoTransactions
     ) { args: Array<Any?> ->
+        val demoMode = args[21] as Boolean
+        val demoProfile = args[22] as ChurchProfileEntity
         @Suppress("UNCHECKED_CAST")
-        val allTx = args[0] as List<TransactionEntity>
+        val demoTransactions = args[23] as List<TransactionEntity>
         @Suppress("UNCHECKED_CAST")
-        val allCategories = args[1] as List<CategoryEntity>
+        val allTx = if (demoMode) demoTransactions else args[0] as List<TransactionEntity>
         @Suppress("UNCHECKED_CAST")
-        val allBudgets = args[2] as List<BudgetEntity>
+        val allCategories = if (demoMode) DemoDataset.categories else args[1] as List<CategoryEntity>
         @Suppress("UNCHECKED_CAST")
-        val allRegisters = args[3] as List<CashRegisterEntity>
-        val profile = (args[4] as? ChurchProfileEntity) ?: ChurchProfileEntity()
+        val allBudgets = if (demoMode) DemoDataset.budgets else args[2] as List<BudgetEntity>
         @Suppress("UNCHECKED_CAST")
-        val allMembers = args[5] as List<MemberEntity>
+        val allRegisters = if (demoMode) DemoDataset.registers else args[3] as List<CashRegisterEntity>
+        val profile = if (demoMode) demoProfile else (args[4] as? ChurchProfileEntity) ?: ChurchProfileEntity()
+        @Suppress("UNCHECKED_CAST")
+        val allMembers = if (demoMode) DemoDataset.members else args[5] as List<MemberEntity>
         val period = args[6] as PeriodFilter
         val typeFilter = args[7] as TransactionType?
         val categoryFilter = args[8] as String?
@@ -280,9 +305,11 @@ class FinancialViewModel(
         val maxAmount = args[15] as Long
         val sortMode = args[16] as SortMode
         @Suppress("UNCHECKED_CAST")
-        val users = args[17] as List<UserEntity>
-        val currentUser = args[18] as? UserEntity
-        val allProjects = args[19] as List<ProjectEntity>
+        val users = if (demoMode) listOf(DemoDataset.user) else args[17] as List<UserEntity>
+        val currentUser = if (demoMode) DemoDataset.user else args[18] as? UserEntity
+        val allProjects = if (demoMode) DemoDataset.projects else args[19] as List<ProjectEntity>
+        @Suppress("UNCHECKED_CAST")
+        val customPeriodRange = args[20] as Pair<Long, Long>?
 
         val themeMode = themeOverride ?: runCatching { ThemeMode.valueOf(profile.themeMode) }
             .getOrDefault(ThemeMode.SYSTEM)
@@ -325,7 +352,7 @@ class FinancialViewModel(
         // ==========================================
         // 2. Périmètre de la période et de la caisse
         // ==========================================
-        val (startTime, endTime) = calculateTimeBounds(period)
+        val (startTime, endTime) = calculateTimeBounds(period, customPeriodRange)
         val periodBaseTx = allTx.filter { tx ->
             tx.timestamp in startTime..endTime &&
                 (selectedRegId == null || tx.cashRegisterId == selectedRegId)
@@ -481,7 +508,7 @@ class FinancialViewModel(
         // Situation de chaque caisse : ouverture + entrées − sorties = clôture.
         // Les virements internes comptent dans les mouvements (l'argent change
         // bien de caisse) mais restent exclus du résultat plus haut.
-        val (periodStartMillis, periodEndMillis) = calculateTimeBounds(period)
+        val (periodStartMillis, periodEndMillis) = calculateTimeBounds(period, customPeriodRange)
         val statements = allRegisters.filter { !it.isDeleted }.map { reg ->
             val regTx = allTx.filter { it.cashRegisterId == reg.id }
             val before = regTx.filter { it.timestamp < periodStartMillis }
@@ -511,9 +538,11 @@ class FinancialViewModel(
             val projectTx = allTx.filter { it.projectId == project.id && !it.isNeutralised }
             ProjectSummary(
                 id = project.id,
+                uid = project.uid,
                 name = project.name,
                 description = project.description,
                 targetCents = project.targetCents,
+                kind = project.kind,
                 collectedCents = projectTx
                     .filter { it.type == TransactionType.INCOME }
                     .sumOf { it.amountCents },
@@ -553,6 +582,7 @@ class FinancialViewModel(
 
         FinancialUiState(
             transactions = filteredTx,
+            allTransactions = allTx,
             periodTransactions = periodBaseTx,
             totalIncomeCents = totalIncome,
             totalExpenseCents = totalExpense,
@@ -592,6 +622,8 @@ class FinancialViewModel(
             canWrite = currentUser?.roleValue?.canWrite ?: true,
             canDelete = currentUser?.roleValue?.canDelete ?: true,
             canManageUsers = currentUser?.roleValue?.canManageUsers ?: true,
+            isDemoMode = demoMode,
+            workspaceId = repository.workspaceId,
             isLoading = false
         )
     }
@@ -599,17 +631,25 @@ class FinancialViewModel(
         // principal : l'interface ne se fige pas sur un gros journal.
         .flowOn(kotlinx.coroutines.Dispatchers.Default)
         // Un imprévu de calcul ne doit jamais tuer l'écran : on garde le dernier état.
-        .catch { emit(FinancialUiState(isLoading = false)) }
+        .catch { emit(FinancialUiState(isLoading = false, workspaceId = repository.workspaceId)) }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
-            initialValue = FinancialUiState(isLoading = true)
+            initialValue = FinancialUiState(isLoading = true, workspaceId = repository.workspaceId)
         )
 
     // ==========================================
     // Filtres
     // ==========================================
-    fun setPeriod(period: PeriodFilter) { _selectedPeriod.value = period }
+    fun setPeriod(period: PeriodFilter) {
+        if (period != PeriodFilter.PERSONNALISEE) _customPeriodRange.value = null
+        _selectedPeriod.value = period
+    }
+
+    fun setCustomPeriod(startMillis: Long, endMillis: Long) {
+        _customPeriodRange.value = minOf(startMillis, endMillis) to maxOf(startMillis, endMillis)
+        _selectedPeriod.value = PeriodFilter.PERSONNALISEE
+    }
     fun setTypeFilter(type: TransactionType?) { _selectedTypeFilter.value = type }
     fun setCategoryFilter(category: String?) { _selectedCategoryFilter.value = category }
     fun setSearchQuery(query: String) { _searchQuery.value = query }
@@ -620,7 +660,23 @@ class FinancialViewModel(
     fun setSortMode(mode: SortMode) { _sortMode.value = mode }
     fun setSelectedCashRegister(id: Long?) { _selectedCashRegisterId.value = id }
 
+    private fun resetWorkspaceUiState() {
+        _customPeriodRange.value = null
+        _selectedPeriod.value = PeriodFilter.CE_MOIS
+        _selectedTypeFilter.value = null
+        _selectedCategoryFilter.value = null
+        _searchQuery.value = ""
+        _minAmountCents.value = 0L
+        _maxAmountCents.value = 0L
+        _sortMode.value = SortMode.DATE_DESC
+        _selectedCashRegisterId.value = null
+        _currentBudgetCalendar.value = Calendar.getInstance()
+        _themeMode.value = null
+        _amountDisplayMode.value = null
+    }
+
     fun clearFilters() {
+        _customPeriodRange.value = null
         _selectedPeriod.value = PeriodFilter.CE_MOIS
         _selectedTypeFilter.value = null
         _selectedCategoryFilter.value = null
@@ -633,6 +689,10 @@ class FinancialViewModel(
 
     /** Contrôle des droits avant toute modification des données. */
     private suspend fun ensurePermission(needDelete: Boolean = false): Boolean {
+        if (_demoMode.value) {
+            _eventFlow.emit("Mode démonstration : action en lecture seule, aucune donnée n'a été modifiée")
+            return false
+        }
         val role = _currentUser.value?.roleValue ?: return true
         return when {
             needDelete && !role.canDelete -> {
@@ -650,6 +710,18 @@ class FinancialViewModel(
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
     // ==========================================
+    /** Ouvre un jeu fictif en mémoire, séparé de Room et automatiquement abandonné à la sortie. */
+    fun startDemoMode(context: Context? = null) {
+        scheduleDemoFileCleanup(context)
+        if (!_demoMode.value) _demoReturnUser.value = _currentUser.value
+        _demoTransactions.value = DemoDataset.transactions
+        resetWorkspaceUiState()
+        _demoProfile.value = DemoDataset.profile
+        _currentUser.value = DemoDataset.user
+        _demoMode.value = true
+        viewModelScope.launch { _eventFlow.emit("Démonstration : vos données réelles sont protégées ; les écritures d'essai sont temporaires.") }
+    }
+
     fun login(userId: Long, pin: String) {
         viewModelScope.launch {
             val user = repository.getUserById(userId)
@@ -693,12 +765,35 @@ class FinancialViewModel(
         }
     }
 
-    fun logout() {
+    /** Quitte l'exemple et restaure la session locale précédente, sans modifier les données. */
+    fun exitDemoMode(context: Context? = null) {
+        if (!_demoMode.value) return
+        _demoMode.value = false
+        _demoProfile.value = DemoDataset.profile
+        _demoTransactions.value = DemoDataset.transactions
+        resetWorkspaceUiState()
+        _currentUser.value = _demoReturnUser.value
+        _demoReturnUser.value = null
+        scheduleDemoFileCleanup(context)
+        viewModelScope.launch { _eventFlow.emit("Démonstration terminée ; les données d'essai ont été abandonnées") }
+    }
+
+    fun logout(context: Context? = null) {
+        if (_demoMode.value) scheduleDemoFileCleanup(context)
+        _demoMode.value = false
+        _demoProfile.value = DemoDataset.profile
+        _demoTransactions.value = DemoDataset.transactions
+        resetWorkspaceUiState()
+        _demoReturnUser.value = null
         _currentUser.value = null
+        _customPeriodRange.value = null
+        _themeMode.value = null
+        _amountDisplayMode.value = null
     }
 
     fun addUser(displayName: String, role: UserRole, pin: String) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val name = displayName.trim()
             if (name.isBlank()) {
                 _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
@@ -719,6 +814,7 @@ class FinancialViewModel(
 
     fun updateUser(user: UserEntity, displayName: String, role: UserRole, newPin: String) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val name = displayName.trim()
             if (name.isBlank()) {
                 _eventFlow.emit("Le nom de l'utilisateur est obligatoire")
@@ -746,6 +842,7 @@ class FinancialViewModel(
 
     fun deleteUser(user: UserEntity) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             if (repository.getUsersCount() <= 1) {
                 _eventFlow.emit("Il doit rester au moins un utilisateur")
                 return@launch
@@ -761,13 +858,19 @@ class FinancialViewModel(
     // ==========================================
     fun exportSyncFile(context: Context, passphrase: String, onReady: (java.io.File) -> Unit) {
         viewModelScope.launch {
+            if (_demoMode.value) {
+                _eventFlow.emit("Le partage du dossier réel est désactivé en mode démonstration")
+                return@launch
+            }
             try {
                 if (passphrase.length < 6) {
                     _eventFlow.emit("La phrase de passe doit contenir au moins 6 caractères")
                     return@launch
                 }
                 val state = uiState.value
-                val directory = java.io.File(context.cacheDir, "echanges")
+                val syncRoot = java.io.File(context.cacheDir, "echanges")
+                val directory = if (repository.workspaceId == "default") syncRoot
+                    else java.io.File(syncRoot, repository.workspaceId)
                 val file = SyncManager.exportFile(
                     context = context,
                     repository = repository,
@@ -810,6 +913,7 @@ class FinancialViewModel(
      */
     fun wipeData(context: Context, fullReset: Boolean) {
         viewModelScope.launch {
+            if (!ensurePermission(needDelete = true)) return@launch
             if (fullReset) {
                 repository.wipeEverything()
                 repository.deleteAllProjects()
@@ -836,8 +940,11 @@ class FinancialViewModel(
 
     /** Copie silencieuse quotidienne : ne bloque jamais l'ouverture de l'app. */
     fun runAutoBackup(context: Context) {
+        if (_demoMode.value) return
         viewModelScope.launch {
-            com.example.export.BackupService.autoSnapshot(context.applicationContext, repository)
+            if (!_demoMode.value) {
+                com.example.export.BackupService.autoSnapshot(context.applicationContext, repository)
+            }
         }
     }
 
@@ -851,6 +958,10 @@ class FinancialViewModel(
         onResult: (Result<com.example.export.BackupService.ExportResult>) -> Unit
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Sauvegarde désactivée en mode démonstration")))
+                return@launch
+            }
             val result = runCatching {
                 com.example.export.BackupService.create(context.applicationContext, repository, password)
             }
@@ -866,6 +977,10 @@ class FinancialViewModel(
         onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Sauvegarde désactivée en mode démonstration")))
+                return@launch
+            }
             val result = runCatching {
                 com.example.export.BackupService.inspect(context.applicationContext, uri, password)
             }
@@ -880,6 +995,10 @@ class FinancialViewModel(
         onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Restauration désactivée en mode démonstration")))
+                return@launch
+            }
             val result = runCatching {
                 com.example.export.BackupService.restore(context.applicationContext, repository, uri, password)
             }
@@ -898,6 +1017,10 @@ class FinancialViewModel(
         onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Restauration désactivée en mode démonstration")))
+                return@launch
+            }
             val result = runCatching {
                 com.example.export.BackupService.restoreLatestAuto(context.applicationContext, repository)
             }
@@ -911,13 +1034,31 @@ class FinancialViewModel(
         }
     }
 
+    private fun scheduleDemoFileCleanup(context: Context?) {
+        context?.applicationContext?.let { appContext ->
+            viewModelScope.launch(Dispatchers.IO) { clearDemoFiles(appContext) }
+        }
+    }
+
+    private fun clearDemoFiles(context: Context) {
+        runCatching {
+            java.io.File(context.cacheDir, "reports/demo").deleteRecursively()
+            java.io.File(context.cacheDir, "echanges/demo").deleteRecursively()
+            java.io.File(context.cacheDir, "sauvegardes/demo").deleteRecursively()
+            java.io.File(context.filesDir, "justificatifs/demo").deleteRecursively()
+        }
+    }
+
     /** Supprime les rapports, échanges et justificatifs générés pendant les essais. */
     private fun clearGeneratedFiles(context: Context) {
         runCatching {
-            java.io.File(context.cacheDir, "reports").deleteRecursively()
-            java.io.File(context.cacheDir, "echanges").deleteRecursively()
-            java.io.File(context.filesDir, "exports").deleteRecursively()
-            java.io.File(context.filesDir, "receipts").deleteRecursively()
+            fun scoped(directory: java.io.File): java.io.File =
+                if (repository.workspaceId == "default") directory
+                else java.io.File(directory, repository.workspaceId)
+            scoped(java.io.File(context.cacheDir, "reports")).deleteRecursively()
+            scoped(java.io.File(context.cacheDir, "echanges")).deleteRecursively()
+            scoped(java.io.File(context.filesDir, "exports")).deleteRecursively()
+            scoped(java.io.File(context.filesDir, "justificatifs")).deleteRecursively()
         }
     }
 
@@ -936,6 +1077,7 @@ class FinancialViewModel(
         accentColorHex: String
     ) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             val current = repository.getProfile() ?: ChurchProfileEntity()
             repository.saveProfile(
                 current.copy(
@@ -967,6 +1109,10 @@ class FinancialViewModel(
     /** Met à jour un champ libre du profil (nom, logo, palette, contacts…). */
     fun updateProfile(transform: (ChurchProfileEntity) -> ChurchProfileEntity) {
         viewModelScope.launch {
+            if (_demoMode.value) {
+                _eventFlow.emit("Le profil exemple est en lecture seule")
+                return@launch
+            }
             val current = repository.getProfile() ?: ChurchProfileEntity()
             repository.saveProfile(transform(current).copy(updatedAt = System.currentTimeMillis()))
         }
@@ -995,6 +1141,7 @@ class FinancialViewModel(
 
     fun completeOnboardingFromScreen(profile: ChurchProfileEntity) {
         viewModelScope.launch {
+            if (!ensurePermission()) return@launch
             repository.saveProfile(
                 profile.copy(
                     churchName = profile.churchName.trim(),
@@ -1245,7 +1392,7 @@ class FinancialViewModel(
     // ==========================================
     // Projets et fonds affectés
     // ==========================================
-    fun addProject(name: String, description: String, targetCents: Long) {
+    fun addProject(name: String, description: String, targetCents: Long, kind: String = "PROJECT") {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
             val cleanName = name.trim()
@@ -1261,14 +1408,15 @@ class FinancialViewModel(
                 ProjectEntity(
                     name = cleanName,
                     description = description.trim(),
-                    targetCents = targetCents.coerceAtLeast(0L)
+                    targetCents = targetCents.coerceAtLeast(0L),
+                    kind = kind.takeIf { it in setOf("PROJECT", "CAMPAIGN", "EVENT", "DONATION") } ?: "PROJECT"
                 )
             )
             _eventFlow.emit("Projet \"$cleanName\" créé")
         }
     }
 
-    fun updateProject(project: ProjectEntity, name: String, description: String, targetCents: Long, isClosed: Boolean) {
+    fun updateProject(project: ProjectEntity, name: String, description: String, targetCents: Long, isClosed: Boolean, kind: String = project.kind) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
             val cleanName = name.trim()
@@ -1286,6 +1434,7 @@ class FinancialViewModel(
                     description = description.trim(),
                     targetCents = targetCents.coerceAtLeast(0L),
                     isClosed = isClosed,
+                    kind = kind.takeIf { it in setOf("PROJECT", "CAMPAIGN", "EVENT", "DONATION") } ?: "PROJECT",
                     updatedAt = System.currentTimeMillis()
                 )
             )
@@ -1541,6 +1690,33 @@ class FinancialViewModel(
         projectId: Long = 0L
     ) {
         viewModelScope.launch {
+            if (_demoMode.value) {
+                val cleanTitle = title.trim()
+                if (cleanTitle.isBlank() || amountCents <= 0L) {
+                    _eventFlow.emit("Pour l'essai, indiquez un intitulé et un montant supérieur à zéro")
+                    return@launch
+                }
+                val temporaryEntity = TransactionEntity(
+                    id = (_demoTransactions.value.maxOfOrNull { it.id } ?: 0L) + 1L,
+                    uid = "demo-temp-${UUID.randomUUID()}",
+                    title = cleanTitle,
+                    type = type,
+                    amountCents = amountCents,
+                    category = category.trim().ifBlank {
+                        if (type == TransactionType.INCOME) "Autres entrées" else "Autres sorties"
+                    },
+                    timestamp = timestamp,
+                    note = note.trim(),
+                    cashRegisterId = cashRegisterId,
+                    cashRegisterName = cashRegisterName,
+                    receiptPhotoUri = receiptPhotoUri,
+                    updatedBy = DemoDataset.user.displayName,
+                    projectId = projectId
+                )
+                _demoTransactions.value = _demoTransactions.value + temporaryEntity
+                _eventFlow.emit("Écriture d'essai ajoutée temporairement. Elle sera effacée en quittant la démonstration.")
+                return@launch
+            }
             if (!uiState.value.canWrite) {
                 _eventFlow.emit("Votre profil est en lecture seule")
                 return@launch
@@ -1610,6 +1786,18 @@ class FinancialViewModel(
         get() = java.text.SimpleDateFormat("'RG-'yyyyMMdd-HHmm", java.util.Locale.FRANCE)
             .format(java.util.Date())
 
+    private fun outputWorkspaceId(): String = if (_demoMode.value) "demo" else repository.workspaceId
+
+    private fun periodReportLabel(state: FinancialUiState): String {
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE)
+        val period = if (state.selectedPeriod == PeriodFilter.PERSONNALISEE && state.bilan.periodStartMillis > 0L) {
+            "Du ${dateFormat.format(Date(state.bilan.periodStartMillis))} au ${dateFormat.format(Date(state.bilan.periodEndMillis))}"
+        } else {
+            state.selectedPeriod.label
+        }
+        return "$period (${state.selectedCashRegisterName})"
+    }
+
     fun exportPdf(context: Context) {
         viewModelScope.launch {
             try {
@@ -1617,7 +1805,7 @@ class FinancialViewModel(
                 val pdfFile = ReportExporter.generatePdfReport(
                     context = context,
                     profile = state.profile,
-                    periodLabel = "${state.selectedPeriod.label} (${state.selectedCashRegisterName})",
+                    periodLabel = periodReportLabel(state),
                     transactions = state.periodTransactions,
                     totalIncomeCents = state.totalIncomeCents,
                     totalExpenseCents = state.totalExpenseCents,
@@ -1627,7 +1815,8 @@ class FinancialViewModel(
                     periodStartMillis = state.bilan.periodStartMillis,
                     periodEndMillis = state.bilan.periodEndMillis,
                     generatedBy = state.currentUser?.displayName ?: "",
-                    documentNumber = reportDocumentNumber
+                    documentNumber = reportDocumentNumber,
+                    workspaceId = outputWorkspaceId()
                 )
                 ReportExporter.shareFile(
                     context = context,
@@ -1642,17 +1831,96 @@ class FinancialViewModel(
         }
     }
 
+    fun exportMembersPdf(context: Context) {
+        val state = uiState.value
+        val rows = state.members.filterNot { it.isDeleted }
+            .sortedWith(compareBy<MemberEntity> { it.lastName.lowercase(Locale.FRANCE) }.thenBy { it.firstName.lowercase(Locale.FRANCE) })
+            .map { member -> listOf(member.fullName, member.phone.ifBlank { "—" }, member.profession.ifBlank { "—" }, if (member.isActive) "Actif" else "Inactif") }
+        exportTablePdf(context, state.profile, "Registre des membres", "${rows.size} membre(s)",
+            listOf("Nom", "Téléphone", "Profession", "Statut"), rows)
+    }
+
+    fun exportBudgetPdf(context: Context) {
+        val state = uiState.value
+        val rows = state.categoryBudgetProgress.sortedBy { it.categoryName.lowercase(Locale.FRANCE) }.map { item ->
+            listOf(item.categoryName, CurrencyFormatter.format(item.budgetAmountCents),
+                CurrencyFormatter.format(item.spentAmountCents), CurrencyFormatter.format(item.remainingCents),
+                "${item.percentage.toInt()} %")
+        }
+        exportTablePdf(context, state.profile, "Rapport du budget", state.budgetMonthLabel,
+            listOf("Catégorie", "Prévu", "Dépensé", "Disponible", "Utilisé"), rows)
+    }
+
+    fun exportHistoryPdf(context: Context) {
+        val state = uiState.value
+        val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE)
+        val rows = state.periodTransactions.sortedByDescending { it.timestamp }.map { tx ->
+            listOf(dateFormat.format(Date(tx.timestamp)), when {
+                tx.isTransfer -> "Virement"
+                tx.type == TransactionType.INCOME -> "Entrée"
+                else -> "Sortie"
+            }, tx.category, tx.title, tx.cashRegisterName,
+                CurrencyFormatter.format(tx.amountCents, withSign = true, isPositive = tx.type == TransactionType.INCOME),
+                if (tx.isNeutralised) "Neutralisée" else "Validée")
+        }
+        exportTablePdf(context, state.profile, "Historique des opérations", periodReportLabel(state),
+            listOf("Date", "Type", "Catégorie", "Intitulé", "Caisse", "Montant", "État"), rows)
+    }
+
+    private fun exportTablePdf(
+        context: Context,
+        profile: ChurchProfileEntity,
+        title: String,
+        periodLabel: String,
+        columns: List<String>,
+        rows: List<List<String>>
+    ) {
+        viewModelScope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    ReportExporter.generateTablePdf(context, profile, title, periodLabel, columns, rows, outputWorkspaceId())
+                }
+                ReportExporter.shareFile(context, file, "application/pdf", "$title — ${profile.displayName}")
+                _eventFlow.emit("$title généré en PDF")
+            } catch (e: Exception) {
+                _eventFlow.emit("Erreur lors du rapport $title : ${e.localizedMessage}")
+            }
+        }
+    }
+
+    fun exportExcel(context: Context) {
+        viewModelScope.launch {
+            try {
+                val state = uiState.value
+                val file = withContext(Dispatchers.IO) {
+                    ReportExporter.generateExcelExport(
+                        context, periodReportLabel(state), state.periodTransactions,
+                        state.totalIncomeCents, state.totalExpenseCents, state.netBalanceCents, state.profile,
+                        outputWorkspaceId()
+                    )
+                }
+                ReportExporter.shareFile(context, file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "Classeur ${state.profile.displayName} — ${state.selectedPeriod.label}")
+                _eventFlow.emit("Classeur Excel généré")
+            } catch (e: Exception) {
+                _eventFlow.emit("Erreur lors de l'export Excel : ${e.localizedMessage}")
+            }
+        }
+    }
+
     fun exportCsv(context: Context) {
         viewModelScope.launch {
             try {
                 val state = uiState.value
                 val csvFile = ReportExporter.generateCsvExport(
                     context = context,
-                    periodLabel = "${state.selectedPeriod.label} (${state.selectedCashRegisterName})",
+                    periodLabel = periodReportLabel(state),
                     transactions = state.periodTransactions,
                     totalIncomeCents = state.totalIncomeCents,
                     totalExpenseCents = state.totalExpenseCents,
-                    netBalanceCents = state.netBalanceCents
+                    netBalanceCents = state.netBalanceCents,
+                    profile = state.profile,
+                    workspaceId = outputWorkspaceId()
                 )
                 ReportExporter.shareFile(
                     context = context,
@@ -1719,7 +1987,7 @@ class FinancialViewModel(
         return Pair(start, cal.timeInMillis)
     }
 
-    private fun calculateTimeBounds(period: PeriodFilter): Pair<Long, Long> {
+    private fun calculateTimeBounds(period: PeriodFilter, customRange: Pair<Long, Long>?): Pair<Long, Long> {
         val cal = Calendar.getInstance()
         fun startOfMonth() {
             cal.set(Calendar.DAY_OF_MONTH, 1)
@@ -1730,6 +1998,7 @@ class FinancialViewModel(
         }
         return when (period) {
             PeriodFilter.TOUT -> Pair(0L, Long.MAX_VALUE)
+            PeriodFilter.PERSONNALISEE -> customRange ?: Pair(0L, Long.MAX_VALUE)
             PeriodFilter.CE_MOIS -> {
                 startOfMonth()
                 val start = cal.timeInMillis
@@ -1745,11 +2014,16 @@ class FinancialViewModel(
                 cal.add(Calendar.MILLISECOND, -1)
                 Pair(start, cal.timeInMillis)
             }
-            PeriodFilter.TROIS_MOIS -> {
+            PeriodFilter.TROIS_MOIS, PeriodFilter.QUATRE_MOIS, PeriodFilter.SIX_MOIS -> {
+                val months = when (period) {
+                    PeriodFilter.TROIS_MOIS -> 3
+                    PeriodFilter.QUATRE_MOIS -> 4
+                    else -> 6
+                }
                 startOfMonth()
-                cal.add(Calendar.MONTH, -2)
+                cal.add(Calendar.MONTH, -(months - 1))
                 val start = cal.timeInMillis
-                cal.add(Calendar.MONTH, 3)
+                cal.add(Calendar.MONTH, months)
                 cal.add(Calendar.MILLISECOND, -1)
                 Pair(start, cal.timeInMillis)
             }

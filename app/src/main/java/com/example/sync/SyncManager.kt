@@ -51,6 +51,7 @@ object SyncManager {
     }
 
     class SameFileAsLocal : Exception("Ce fichier provient de cet appareil : aucune donnée à importer")
+    class DifferentChurch : Exception("Ce fichier appartient à une autre église. Ouvrez le dossier correspondant avant l'import.")
 
     /** Construit et chiffre le fichier d'export ; renvoie le fichier prêt à partager. */
     suspend fun exportFile(
@@ -63,6 +64,7 @@ object SyncManager {
     ): File {
         val bundle = SyncBundle(
             churchName = profile.displayName,
+            churchUid = profile.churchUid,
             deviceId = DeviceIdentity.deviceId(context),
             author = authorName,
             exportedAt = System.currentTimeMillis(),
@@ -99,6 +101,15 @@ object SyncManager {
 
         val plain = SyncCrypto.decrypt(bytes, passphrase)
         val bundle = SyncBundleCodec.decode(plain)
+        val localProfile = repository.getProfile()
+            ?: throw IllegalStateException("Configurez d'abord le profil de cette église.")
+        val sameChurch = if (bundle.churchUid.isNotBlank() && localProfile.churchUid.isNotBlank()) {
+            bundle.churchUid == localProfile.churchUid
+        } else {
+            repository.workspaceId == "default" &&
+                bundle.churchName.trim().equals(localProfile.churchName.trim(), ignoreCase = true)
+        }
+        if (!sameChurch) throw DifferentChurch()
 
         if (bundle.deviceId.isNotBlank() && bundle.deviceId == DeviceIdentity.deviceId(context)) {
             throw SameFileAsLocal()

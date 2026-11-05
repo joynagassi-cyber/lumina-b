@@ -32,7 +32,13 @@ val AccentPalettes: List<AccentPalette> = listOf(
     AccentPalette("pourpre", "Violet pourpre", "#6D28D9"),
     AccentPalette("bordeaux", "Bordeaux", "#9F1239"),
     AccentPalette("ambre", "Ambre doré", "#B45309"),
-    AccentPalette("ardoise", "Ardoise neutre", "#334155")
+    AccentPalette("ardoise", "Ardoise neutre", "#334155"),
+    AccentPalette("corail", "Corail terracotta", "#B9382E"),
+    AccentPalette("lagon", "Turquoise lagon", "#0F766E"),
+    AccentPalette("rose", "Rose profond", "#BE185D"),
+    AccentPalette("foret", "Vert forêt", "#166534"),
+    AccentPalette("cobalt", "Cobalt", "#1D4ED8"),
+    AccentPalette("prune", "Prune", "#7E22CE")
 )
 
 fun parseHexColor(hex: String, fallback: Color = IndigoPrimaryLight): Color {
