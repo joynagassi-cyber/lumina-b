@@ -1,5 +1,6 @@
 package com.example.data
 
+import androidx.room.withTransaction
 import com.example.export.BackupSnapshot
 import kotlinx.coroutines.flow.Flow
 import java.util.UUID
@@ -13,7 +14,8 @@ class TransactionRepository(
     private val memberDao: MemberDao,
     private val userDao: UserDao,
     private val projectDao: ProjectDao,
-    val workspaceId: String = "default"
+    val workspaceId: String = "default",
+    private val database: LuminaDatabase? = null
 ) {
     // ==========================================
     // Utilisateurs de l'appareil (rôles & PIN)
@@ -145,11 +147,11 @@ class TransactionRepository(
     }
 
     suspend fun deleteCategory(category: CategoryEntity) {
-        categoryDao.deleteCategory(category)
+        categoryDao.softDeleteById(category.id, System.currentTimeMillis())
     }
 
     suspend fun deleteCategoryById(id: Long) {
-        categoryDao.deleteById(id)
+        categoryDao.softDeleteById(id, System.currentTimeMillis())
     }
 
     // ==========================================
@@ -262,6 +264,8 @@ class TransactionRepository(
 
     suspend fun getProjectById(id: Long): ProjectEntity? = projectDao.getById(id)
 
+    suspend fun projectByUid(uid: String): ProjectEntity? = projectDao.getByUid(uid)
+
     suspend fun saveProject(project: ProjectEntity): Long = projectDao.upsert(project)
 
     suspend fun updateProject(project: ProjectEntity) = projectDao.update(project)
@@ -359,6 +363,10 @@ class TransactionRepository(
 
     suspend fun categoriesForSync(): List<CategoryEntity> = categoryDao.getAllForSync()
 
+    suspend fun budgetsForSync(): List<BudgetEntity> = budgetDao.getAllOnce()
+
+    suspend fun projectsForSync(): List<ProjectEntity> = projectDao.getAllForBackup()
+
     suspend fun transactionByUid(uid: String): TransactionEntity? = transactionDao.getByUid(uid)
 
     suspend fun memberByUid(uid: String): MemberEntity? = memberDao.getByUid(uid)
@@ -383,6 +391,20 @@ class TransactionRepository(
         items.forEach { categoryDao.insertCategory(it) }
     }
 
+    suspend fun insertBudgetRaw(budget: BudgetEntity): Long = budgetDao.insertOrUpdateBudget(budget)
+
+    suspend fun insertProjectRaw(project: ProjectEntity): Long = projectDao.upsert(project)
+
+    /** Encadre une fusion complète afin qu'aucune erreur n'enregistre un demi-fichier. */
+    suspend fun <T> inDatabaseTransaction(block: suspend () -> T): T {
+        val activeDatabase = database
+        return if (activeDatabase != null) {
+            activeDatabase.withTransaction { block() }
+        } else {
+            block()
+        }
+    }
+
     // ==========================================
     // Sauvegarde et restauration du dossier
     // ==========================================
@@ -397,16 +419,25 @@ class TransactionRepository(
         categories = categoryDao.getAllForSync(),
         budgets = budgetDao.getAllOnce(),
         registers = cashRegisterDao.getAllForSync(),
-        projects = projectDao.getAllOnce(),
+        projects = projectDao.getAllForBackup(),
         transactions = transactionDao.getAllForSync()
     )
 
     /**
-     * Remet le dossier dans l'état de la sauvegarde : les données actuelles
-     * sont d'abord effacées, puis les écritures sont réinsérées telles quelles
-     * (identifiants conservés pour que les rattachements restent valables).
+     * Restauration atomique : une interruption ne doit jamais laisser une base
+     * partiellement effacée. Les suppressions logiques de projets sont aussi
+     * conservées pour que la sauvegarde reste fidèle à l'historique.
      */
     suspend fun restoreAll(snapshot: BackupSnapshot) {
+        val database = database
+        if (database != null) {
+            database.withTransaction { restoreAllRows(snapshot) }
+        } else {
+            restoreAllRows(snapshot)
+        }
+    }
+
+    private suspend fun restoreAllRows(snapshot: BackupSnapshot) {
         transactionDao.deleteAllTransactions()
         memberDao.deleteAllMembers()
         budgetDao.deleteAllBudgets()

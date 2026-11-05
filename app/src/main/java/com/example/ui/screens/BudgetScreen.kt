@@ -63,6 +63,7 @@ import com.example.ui.components.CategoryManagerDialog
 import com.example.ui.components.SetBudgetDialog
 import com.example.ui.components.parseHexColor
 import com.example.ui.designsystem.HeroCard
+import com.example.ui.designsystem.GroupedCard
 import com.example.ui.designsystem.IconTile
 import com.example.ui.designsystem.LuminaTokens
 import com.example.ui.designsystem.PillButton
@@ -329,6 +330,58 @@ fun BudgetScreen(
                 )
             }
         )
+
+        val chartBudgets = uiState.categoryBudgetProgress
+            .filter { it.budgetAmountCents > 0L }
+            .sortedByDescending { it.budgetAmountCents }
+            .take(6)
+        if (chartBudgets.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(LuminaTokens.SpacingDefault))
+            val chartScale = chartBudgets.maxOf { maxOf(it.budgetAmountCents, it.spentAmountCents) }.coerceAtLeast(1L)
+            GroupedCard(title = "Comparaison visuelle par catégorie", testTag = "budget_comparison_chart") {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Dépensé", style = MaterialTheme.typography.labelSmall)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)))
+                        Spacer(Modifier.width(5.dp))
+                        Text("Plafond", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                chartBudgets.forEach { item ->
+                    Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(item.categoryName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${CurrencyFormatter.format(item.spentAmountCents, uiState.amountDisplayMode)} / ${CurrencyFormatter.format(item.budgetAmountCents, uiState.amountDisplayMode)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (item.isExceeded) ExpenseRed else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Box(
+                            Modifier.fillMaxWidth().height(12.dp).clip(LuminaTokens.ShapePill)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                        ) {
+                            Box(
+                                Modifier.fillMaxWidth((item.budgetAmountCents.toFloat() / chartScale).coerceIn(0f, 1f))
+                                    .fillMaxSize()
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f))
+                            )
+                            Box(
+                                Modifier.fillMaxWidth((item.spentAmountCents.toFloat() / chartScale).coerceIn(0f, 1f))
+                                    .fillMaxSize()
+                                    .background(if (item.isExceeded) ExpenseRed else MaterialTheme.colorScheme.primary)
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(LuminaTokens.SpacingLarge))
 

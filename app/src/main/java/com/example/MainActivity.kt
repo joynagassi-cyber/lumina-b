@@ -161,7 +161,8 @@ class MainActivity : ComponentActivity() {
             database.memberDao(),
             database.userDao(),
             database.projectDao(),
-            workspaceId = activeWorkspace.id
+            workspaceId = activeWorkspace.id,
+            database = database
         )
 
         setContent {
@@ -351,7 +352,10 @@ fun LuminaApp(
     if (!uiState.profile.onboardingCompleted) {
         OnboardingScreen(
             initialProfile = uiState.profile,
-            onFinish = { profile -> viewModel.completeOnboardingFromScreen(profile) }
+            onFinish = { profile -> viewModel.completeOnboardingFromScreen(profile) },
+            onJoinFromFile = { uri, password, onResult ->
+                viewModel.importOrganizationBackupForNewMember(context, uri, password, onResult)
+            }
         )
         return
     }
@@ -1001,9 +1005,11 @@ fun LuminaApp(
                                     )
                                     scope.launch {
                                         snackbarHostState.showSnackbar(
-                                            "Sauvegarde prête : ${export.snapshot.transactionCount} écritures, " +
+                                            "Fichier Lumina prêt : ${export.snapshot.transactionCount} écritures, " +
                                                 "${export.snapshot.memberCount} membres" +
-                                                if (export.encrypted) " (protégée par mot de passe)" else ""
+                                                if (export.missingReceiptCount > 0) {
+                                                    " — ${export.missingReceiptCount} justificatif(s) absent(s) du stockage local"
+                                                } else if (export.encrypted) " (ZIP protégé par mot de passe)" else " (ZIP non chiffré)"
                                         )
                                     }
                                 }.onFailure {

@@ -1,8 +1,10 @@
 package com.example.sync
 
+import com.example.data.BudgetEntity
 import com.example.data.CashRegisterEntity
 import com.example.data.CategoryEntity
 import com.example.data.MemberEntity
+import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import org.json.JSONArray
@@ -27,7 +29,15 @@ data class SyncBundle(
     val registers: List<CashRegisterEntity> = emptyList(),
     val categories: List<CategoryEntity> = emptyList(),
     val members: List<MemberEntity> = emptyList(),
-    val transactions: List<TransactionEntity> = emptyList()
+    val budgets: List<BudgetEntity> = emptyList(),
+    val projects: List<ProjectEntity> = emptyList(),
+    val transactions: List<TransactionEntity> = emptyList(),
+    /** projectUid stable, keyed par UID d'écriture; les IDs Room ne traversent pas les appareils. */
+    val projectUidByTransactionUid: Map<String, String> = emptyMap(),
+    /** registerUid stable, keyed par UID d'écriture; supporte les changements de nom. */
+    val registerUidByTransactionUid: Map<String, String> = emptyMap(),
+    /** Les fichiers sync actuels transportent l'indicateur, pas les octets du reçu. */
+    val transactionUidsWithReceipts: Set<String> = emptySet()
 ) {
     val transactionCount: Int get() = transactions.size
 }
@@ -35,7 +45,7 @@ data class SyncBundle(
 object SyncBundleCodec {
 
     const val FORMAT = "lumina-sync"
-    const val VERSION = 1
+    const val VERSION = 2
 
     class UnsupportedFormat(message: String) : Exception(message)
 
@@ -75,6 +85,7 @@ object SyncBundleCodec {
                     put("type", category.type.name)
                     put("colorHex", category.colorHex)
                     put("isDefault", category.isDefault)
+                    put("iconName", category.iconName)
                     put("updatedAt", category.updatedAt)
                     put("isDeleted", category.isDeleted)
                 }
@@ -97,6 +108,7 @@ object SyncBundleCodec {
                     put("profession", member.profession)
                     put("notes", member.notes)
                     put("joinedAt", member.joinedAt)
+                    put("isActive", member.isActive)
                     put("updatedAt", member.updatedAt)
                     put("isDeleted", member.isDeleted)
                 }
@@ -104,7 +116,37 @@ object SyncBundleCodec {
         }
         root.put("members", members)
 
+        val budgets = JSONArray()
+        bundle.budgets.forEach { budget ->
+            budgets.put(JSONObject().apply {
+                put("categoryName", budget.categoryName)
+                put("amountCents", budget.amountCents)
+                put("monthYearKey", budget.monthYearKey)
+                put("alertThresholdPercent", budget.alertThresholdPercent)
+                put("isHardLimit", budget.isHardLimit)
+                put("notes", budget.notes)
+            })
+        }
+        root.put("budgets", budgets)
+
+        val projects = JSONArray()
+        bundle.projects.forEach { project ->
+            projects.put(JSONObject().apply {
+                put("uid", project.uid)
+                put("name", project.name)
+                put("description", project.description)
+                put("targetCents", project.targetCents)
+                put("isClosed", project.isClosed)
+                put("createdAt", project.createdAt)
+                put("updatedAt", project.updatedAt)
+                put("isDeleted", project.isDeleted)
+                put("kind", project.kind)
+            })
+        }
+        root.put("projects", projects)
+
         val registerUidById = bundle.registers.associate { it.id to it.uid }
+        val projectUidById = bundle.projects.associate { it.id to it.uid }
         val transactions = JSONArray()
         bundle.transactions.forEach { tx ->
             transactions.put(
@@ -123,6 +165,9 @@ object SyncBundleCodec {
                     put("updatedAt", tx.updatedAt)
                     put("updatedBy", tx.updatedBy)
                     put("isDeleted", tx.isDeleted)
+                    put("reversalOfUid", tx.reversalOfUid)
+                    put("isCancelled", tx.isCancelled)
+                    put("projectUid", projectUidById[tx.projectId] ?: "")
                 }
             )
         }
@@ -167,6 +212,7 @@ object SyncBundleCodec {
                     .getOrDefault(TransactionType.EXPENSE),
                 colorHex = obj.optString("colorHex", "#3730A3"),
                 isDefault = obj.optBoolean("isDefault"),
+                iconName = obj.optString("iconName", ""),
                 updatedAt = obj.optLong("updatedAt"),
                 isDeleted = obj.optBoolean("isDeleted")
             )
@@ -186,12 +232,49 @@ object SyncBundleCodec {
                 profession = obj.optString("profession"),
                 notes = obj.optString("notes"),
                 joinedAt = obj.optLong("joinedAt"),
+                isActive = obj.optBoolean("isActive", true),
                 updatedAt = obj.optLong("updatedAt"),
                 isDeleted = obj.optBoolean("isDeleted")
             )
         }
 
+        val budgets = root.optJSONArray("budgets").toList { obj ->
+            BudgetEntity(
+                id = 0,
+                categoryName = obj.optString("categoryName"),
+                amountCents = obj.optLong("amountCents"),
+                monthYearKey = obj.optString("monthYearKey"),
+                alertThresholdPercent = obj.optInt("alertThresholdPercent", 80),
+                isHardLimit = obj.optBoolean("isHardLimit", false),
+                notes = obj.optString("notes", "")
+            )
+        }
+
+        val projects = root.optJSONArray("projects").toList { obj ->
+            ProjectEntity(
+                id = 0,
+                uid = obj.optString("uid"),
+                name = obj.optString("name"),
+                description = obj.optString("description"),
+                targetCents = obj.optLong("targetCents"),
+                isClosed = obj.optBoolean("isClosed"),
+                createdAt = obj.optLong("createdAt"),
+                updatedAt = obj.optLong("updatedAt"),
+                isDeleted = obj.optBoolean("isDeleted"),
+                kind = obj.optString("kind", "PROJECT")
+            )
+        }
+
+        val transactionProjectUids = mutableMapOf<String, String>()
+        val transactionRegisterUids = mutableMapOf<String, String>()
+        val transactionUidsWithReceipts = mutableSetOf<String>()
         val transactions = root.optJSONArray("transactions").toList { obj ->
+            val uid = obj.optString("uid")
+            val projectUid = obj.optString("projectUid")
+            val registerUid = obj.optString("registerUid")
+            if (uid.isNotBlank() && projectUid.isNotBlank()) transactionProjectUids[uid] = projectUid
+            if (uid.isNotBlank() && registerUid.isNotBlank()) transactionRegisterUids[uid] = registerUid
+            if (uid.isNotBlank() && obj.optBoolean("hasReceipt")) transactionUidsWithReceipts += uid
             TransactionEntity(
                 id = 0,
                 uid = obj.optString("uid"),
@@ -208,7 +291,10 @@ object SyncBundleCodec {
                 receiptPhotoUri = "",
                 updatedAt = obj.optLong("updatedAt"),
                 updatedBy = obj.optString("updatedBy"),
-                isDeleted = obj.optBoolean("isDeleted")
+                isDeleted = obj.optBoolean("isDeleted"),
+                reversalOfUid = obj.optString("reversalOfUid", ""),
+                isCancelled = obj.optBoolean("isCancelled", false),
+                projectId = 0L
             )
         }
 
@@ -221,7 +307,12 @@ object SyncBundleCodec {
             registers = registers,
             categories = categories,
             members = members,
-            transactions = transactions
+            budgets = budgets,
+            projects = projects,
+            transactions = transactions,
+            projectUidByTransactionUid = transactionProjectUids,
+            registerUidByTransactionUid = transactionRegisterUids,
+            transactionUidsWithReceipts = transactionUidsWithReceipts
         )
     }
 

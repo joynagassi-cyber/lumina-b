@@ -992,6 +992,37 @@ class FinancialViewModel(
         }
     }
 
+    /** Import d'un dossier partagé sur un appareil neuf, avant la création du PIN local. */
+    fun importOrganizationBackupForNewMember(
+        context: Context,
+        uri: android.net.Uri,
+        password: String,
+        onResult: (Result<com.example.export.BackupSnapshot>) -> Unit
+    ) {
+        viewModelScope.launch {
+            if (!ensurePermission()) {
+                onResult(Result.failure(IllegalStateException("Import désactivé en mode démonstration")))
+                return@launch
+            }
+            val result = runCatching {
+                com.example.export.BackupService.importForNewMember(
+                    context.applicationContext,
+                    repository,
+                    uri,
+                    password
+                )
+            }
+            if (result.isSuccess) {
+                _selectedCashRegisterId.value = null
+                _selectedCategoryFilter.value = null
+                _searchQuery.value = ""
+                _currentUser.value = null
+                _eventFlow.emit("Dossier Lumina importé. Créez maintenant votre accès personnel.")
+            }
+            onResult(result)
+        }
+    }
+
     fun restoreBackup(
         context: Context,
         uri: android.net.Uri,
@@ -1179,7 +1210,7 @@ class FinancialViewModel(
                 _eventFlow.emit("Le prénom et le nom sont obligatoires")
                 return@launch
             }
-            repository.updateMember(member)
+            repository.updateMember(member.copy(updatedAt = System.currentTimeMillis()))
             _eventFlow.emit("Fiche de ${member.fullName} mise à jour")
         }
     }
@@ -1609,15 +1640,20 @@ class FinancialViewModel(
             val trimmedName = name.trim()
             if (trimmedName.isBlank()) return@launch
             val previous = repository.getCategoryById(id)
-            repository.updateCategory(
-                CategoryEntity(
-                    id = id,
-                    name = trimmedName,
-                    type = type,
-                    colorHex = colorHex,
-                    isDefault = isDefault
-                )
+            val updatedCategory = (previous ?: CategoryEntity(
+                id = id,
+                name = trimmedName,
+                type = type,
+                colorHex = colorHex,
+                isDefault = isDefault
+            )).copy(
+                name = trimmedName,
+                type = type,
+                colorHex = colorHex,
+                isDefault = isDefault,
+                updatedAt = System.currentTimeMillis()
             )
+            repository.updateCategory(updatedCategory)
             // Renommage : on propage aux écritures et budgets existants.
             if (previous != null && previous.name != trimmedName) {
                 repository.renameCategoryEverywhere(previous.name, trimmedName)

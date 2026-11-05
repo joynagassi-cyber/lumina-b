@@ -14,13 +14,15 @@ import java.util.UUID
 /**
  * Échange de données entre appareils, sans réseau ni compte.
  *
- * Un appareil exporte un fichier chiffré (toutes ses écritures, membres,
- * caisses et catégories), l'autre l'importe : les enregistrements sont fusionnés
- * par identité stable (`uid`) et la version la plus récente l'emporte. Comme les
- * écritures ne sont jamais modifiées mais seulement ajoutées ou supprimées
- * (tombes), la fusion est déterministe et ne peut pas produire de solde faux.
+ * Le bundle chiffré transporte les écritures, membres, caisses, catégories,
+ * budgets et projets. Les identités stables servent de clé entre appareils;
+ * une révision horodatée ne remplace une révision plus ancienne que lorsque
+ * l'ordre est clair. Les divergences à horodatage égal sont signalées et la
+ * copie locale est conservée. Les comptes utilisateurs et les PIN restent locaux.
  *
- * Les comptes utilisateurs et les codes PIN ne quittent jamais l'appareil.
+ * Les reçus/fichiers joints, l'identité visuelle et les historiques de fusion
+ * ne sont pas encore inclus dans cet échange incrémental; l'archive Lumina
+ * complète est le format prévu pour le transfert initial du dossier.
  */
 object SyncManager {
 
@@ -33,25 +35,42 @@ object SyncManager {
         val addedMembers: Int = 0,
         val updatedMembers: Int = 0,
         val addedRegisters: Int = 0,
+        val updatedRegisters: Int = 0,
         val addedCategories: Int = 0,
+        val updatedCategories: Int = 0,
+        val addedBudgets: Int = 0,
+        val addedProjects: Int = 0,
+        val updatedProjects: Int = 0,
+        val conflicts: Int = 0,
         val ignored: Int = 0
     ) {
         val totalChanges: Int
             get() = addedTransactions + updatedTransactions + addedMembers +
-                updatedMembers + addedRegisters + addedCategories
+                updatedMembers + addedRegisters + updatedRegisters + addedCategories +
+                updatedCategories + addedBudgets +
+                addedProjects + updatedProjects
 
         fun summary(): String = buildString {
             append("$addedTransactions nouvelle(s) écriture(s)")
             if (updatedTransactions > 0) append(", $updatedTransactions mise(s) à jour")
             if (addedMembers > 0) append(", $addedMembers membre(s)")
             if (addedRegisters > 0) append(", $addedRegisters caisse(s)")
+            if (updatedRegisters > 0) append(", $updatedRegisters caisse(s) mise(s) à jour")
             if (addedCategories > 0) append(", $addedCategories catégorie(s)")
-            if (ignored > 0) append(" — $ignored déjà à jour")
+            if (updatedCategories > 0) append(", $updatedCategories catégorie(s) mise(s) à jour")
+            if (addedBudgets > 0) append(", $addedBudgets budget(s)")
+            if (addedProjects > 0) append(", $addedProjects projet(s)")
+            if (updatedProjects > 0) append(", $updatedProjects projet(s) mis à jour")
+            if (conflicts > 0) append(" — $conflicts conflit(s) à examiner; les données locales ambiguës ont été conservées")
+            if (ignored > 0) append(" — $ignored élément(s) inchangé(s) ou plus ancien(s)")
         }
     }
 
     class SameFileAsLocal : Exception("Ce fichier provient de cet appareil : aucune donnée à importer")
     class DifferentChurch : Exception("Ce fichier appartient à une autre église. Ouvrez le dossier correspondant avant l'import.")
+    class UnsupportedSyncAttachments : Exception(
+        "Cet échange contient des justificatifs mais ne transporte pas encore leurs fichiers. Aucun élément n'a été importé; utilisez l'archive Lumina complète (ZIP) pour conserver toutes les pièces jointes."
+    )
 
     /** Construit et chiffre le fichier d'export ; renvoie le fichier prêt à partager. */
     suspend fun exportFile(
@@ -71,6 +90,8 @@ object SyncManager {
             registers = repository.registersForSync(),
             categories = repository.categoriesForSync(),
             members = repository.membersForSync(),
+            budgets = repository.budgetsForSync(),
+            projects = repository.projectsForSync(),
             transactions = repository.transactionsForSync()
         )
         val plain = SyncBundleCodec.encode(bundle)
@@ -101,6 +122,7 @@ object SyncManager {
 
         val plain = SyncCrypto.decrypt(bytes, passphrase)
         val bundle = SyncBundleCodec.decode(plain)
+        if (bundle.transactionUidsWithReceipts.isNotEmpty()) throw UnsupportedSyncAttachments()
         val localProfile = repository.getProfile()
             ?: throw IllegalStateException("Configurez d'abord le profil de cette église.")
         val sameChurch = if (bundle.churchUid.isNotBlank() && localProfile.churchUid.isNotBlank()) {
@@ -120,83 +142,154 @@ object SyncManager {
         var addedMembers = 0
         var updatedMembers = 0
         var addedRegisters = 0
+        var updatedRegisters = 0
         var addedCategories = 0
+        var updatedCategories = 0
+        var addedBudgets = 0
+        var addedProjects = 0
+        var updatedProjects = 0
+        var conflicts = 0
         var ignored = 0
 
-        // 1. Caisses : la fusion doit précéder les écritures qui s'y rattachent
-        val localIdByRegisterUid = mutableMapOf<String, Long>()
-        val existingRegisters = repository.registersForSync()
-        for (remote in bundle.registers) {
-            if (remote.uid.isBlank()) continue
-            val local = repository.registerByUid(remote.uid)
-            if (local == null) {
-                val newId = repository.insertCashRegister(remote.copy(id = 0))
-                localIdByRegisterUid[remote.uid] = newId
-                if (!remote.isDeleted) addedRegisters++
-            } else {
-                localIdByRegisterUid[remote.uid] = local.id
-                if (remote.updatedAt > local.updatedAt) {
-                    repository.insertRegistersRaw(listOf(remote.copy(id = local.id)))
+        repository.inDatabaseTransaction {
+            // 1. D'abord les identités des caisses et projets, nécessaires aux écritures.
+            val localIdByRegisterUid = mutableMapOf<String, Long>()
+            val existingRegisters = repository.registersForSync()
+            for (remote in bundle.registers) {
+                if (remote.uid.isBlank()) { ignored++; continue }
+                val local = repository.registerByUid(remote.uid)
+                if (local == null) {
+                    val newId = repository.insertCashRegister(remote.copy(id = 0))
+                    localIdByRegisterUid[remote.uid] = newId
+                    if (!remote.isDeleted) addedRegisters++
+                } else {
+                    localIdByRegisterUid[remote.uid] = local.id
+                    when {
+                        remote.updatedAt > local.updatedAt -> {
+                            repository.insertRegistersRaw(listOf(remote.copy(id = local.id)))
+                            updatedRegisters++
+                        }
+                        remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> conflicts++
+                        else -> ignored++
+                    }
                 }
             }
-        }
-        existingRegisters.forEach { localIdByRegisterUid.putIfAbsent(it.uid, it.id) }
+            existingRegisters.forEach { localIdByRegisterUid.putIfAbsent(it.uid, it.id) }
+            val defaultRegisterId = repository.getCashRegistersOnce().firstOrNull()?.id ?: 1L
+            val registerUidByName = SyncBundleCodec.registerUidsByName(bundle)
 
-        val defaultRegisterId = repository.getCashRegistersOnce().firstOrNull()?.id ?: 1L
-        val registerUidByName = SyncBundleCodec.registerUidsByName(bundle)
-
-        // 2. Catégories (identité stable, puis repli sur le nom)
-        for (remote in bundle.categories) {
-            if (remote.uid.isBlank()) continue
-            val local = repository.categoryByUid(remote.uid)
-                ?: repository.getCategoryByName(remote.name)
-            if (local == null) {
-                repository.insertCategoriesRaw(listOf(remote.copy(id = 0)))
-                if (!remote.isDeleted) addedCategories++
-            } else if (remote.updatedAt > local.updatedAt) {
-                repository.insertCategoriesRaw(listOf(remote.copy(id = local.id)))
+            val localIdByProjectUid = mutableMapOf<String, Long>()
+            repository.projectsForSync().forEach { localIdByProjectUid[it.uid] = it.id }
+            for (remote in bundle.projects) {
+                if (remote.uid.isBlank()) { ignored++; continue }
+                val local = repository.projectByUid(remote.uid)
+                if (local == null) {
+                    val id = repository.insertProjectRaw(remote.copy(id = 0))
+                    localIdByProjectUid[remote.uid] = id
+                    if (!remote.isDeleted) addedProjects++
+                } else {
+                    localIdByProjectUid[remote.uid] = local.id
+                    when {
+                        remote.updatedAt > local.updatedAt -> {
+                            repository.insertProjectRaw(remote.copy(id = local.id))
+                            updatedProjects++
+                        }
+                        remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> conflicts++
+                        else -> ignored++
+                    }
+                }
             }
-        }
 
-        // 3. Membres
-        for (remote in bundle.members) {
-            if (remote.uid.isBlank()) continue
-            val local = repository.memberByUid(remote.uid)
-            when {
-                local == null -> {
-                    repository.insertMembersRaw(listOf(remote.copy(id = 0)))
-                    if (!remote.isDeleted) addedMembers++
+            // 2. Catégories : les identités stables et horodatages distinguent les edits.
+            for (remote in bundle.categories) {
+                if (remote.uid.isBlank()) { ignored++; continue }
+                val local = repository.categoryByUid(remote.uid)
+                    ?: repository.getCategoryByName(remote.name)
+                if (local == null) {
+                    repository.insertCategoriesRaw(listOf(remote.copy(id = 0)))
+                    if (!remote.isDeleted) addedCategories++
+                } else {
+                    when {
+                        remote.updatedAt > local.updatedAt -> {
+                            repository.insertCategoriesRaw(listOf(remote.copy(id = local.id)))
+                            updatedCategories++
+                        }
+                        remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> conflicts++
+                        else -> ignored++
+                    }
                 }
-                remote.updatedAt > local.updatedAt -> {
-                    repository.insertMembersRaw(listOf(remote.copy(id = local.id)))
-                    if (!remote.isDeleted) updatedMembers++
-                }
-                else -> ignored++
             }
-        }
 
-        // 4. Écritures
-        for (remote in bundle.transactions) {
-            if (remote.uid.isBlank()) continue
-            val local = repository.transactionByUid(remote.uid)
-            val localRegisterId = registerUidByName[remote.cashRegisterName]
-                ?.let { localIdByRegisterUid[it] }
-                ?: defaultRegisterId
+            // 3. Membres
+            for (remote in bundle.members) {
+                if (remote.uid.isBlank()) { ignored++; continue }
+                val local = repository.memberByUid(remote.uid)
+                when {
+                    local == null -> {
+                        repository.insertMembersRaw(listOf(remote.copy(id = 0)))
+                        if (!remote.isDeleted) addedMembers++
+                    }
+                    remote.updatedAt > local.updatedAt -> {
+                        repository.insertMembersRaw(listOf(remote.copy(id = local.id)))
+                        updatedMembers++
+                    }
+                    remote.updatedAt == local.updatedAt && remote.copy(id = local.id) != local -> conflicts++
+                    else -> ignored++
+                }
+            }
 
-            when {
-                local == null -> {
-                    repository.insertTransactionsRaw(
-                        listOf(remote.copy(id = 0, cashRegisterId = localRegisterId))
-                    )
-                    if (!remote.isDeleted) addedTx++
+            // 4. Budgets sans horodatage individuel : nouveau créés, identiques ignorés,
+            //    divergents signalés et jamais écrasés silencieusement.
+            for (remote in bundle.budgets) {
+                val local = repository.getBudgetForCategoryAndPeriod(remote.categoryName, remote.monthYearKey)
+                when {
+                    local == null -> {
+                        repository.insertBudgetRaw(remote.copy(id = 0))
+                        addedBudgets++
+                    }
+                    remote.copy(id = local.id) == local -> ignored++
+                    else -> conflicts++
                 }
-                remote.updatedAt > local.updatedAt -> {
-                    repository.insertTransactionsRaw(
-                        listOf(remote.copy(id = local.id, cashRegisterId = localRegisterId))
-                    )
-                    if (!remote.isDeleted) updatedTx++
+            }
+
+            // 5. Écritures : UID caisse/projet en priorité, repli compatible v1 ensuite.
+            for (remote in bundle.transactions) {
+                if (remote.uid.isBlank()) { ignored++; continue }
+                val local = repository.transactionByUid(remote.uid)
+                val registerUid = bundle.registerUidByTransactionUid[remote.uid]
+                    ?: registerUidByName[remote.cashRegisterName]
+                val localRegisterId = registerUid?.let { localIdByRegisterUid[it] } ?: defaultRegisterId
+                val projectUid = bundle.projectUidByTransactionUid[remote.uid]
+                val mappedProjectId = projectUid?.let { localIdByProjectUid[it] } ?: 0L
+                when {
+                    local == null -> {
+                        repository.insertTransactionsRaw(
+                            listOf(remote.copy(id = 0, cashRegisterId = localRegisterId, projectId = mappedProjectId))
+                        )
+                        if (!remote.isDeleted) addedTx++
+                    }
+                    remote.updatedAt > local.updatedAt -> {
+                        repository.insertTransactionsRaw(
+                            listOf(remote.copy(
+                                id = local.id,
+                                cashRegisterId = localRegisterId,
+                                projectId = if (projectUid == null) local.projectId else mappedProjectId,
+                                receiptPhotoUri = local.receiptPhotoUri
+                            ))
+                        )
+                        updatedTx++
+                    }
+                    remote.updatedAt == local.updatedAt -> {
+                        val normalized = remote.copy(
+                            id = local.id,
+                            cashRegisterId = localRegisterId,
+                            projectId = if (projectUid == null) local.projectId else mappedProjectId,
+                            receiptPhotoUri = local.receiptPhotoUri
+                        )
+                        if (normalized != local) conflicts++ else ignored++
+                    }
+                    else -> ignored++
                 }
-                else -> ignored++
             }
         }
 
@@ -209,7 +302,13 @@ object SyncManager {
             addedMembers = addedMembers,
             updatedMembers = updatedMembers,
             addedRegisters = addedRegisters,
+            updatedRegisters = updatedRegisters,
             addedCategories = addedCategories,
+            updatedCategories = updatedCategories,
+            addedBudgets = addedBudgets,
+            addedProjects = addedProjects,
+            updatedProjects = updatedProjects,
+            conflicts = conflicts,
             ignored = ignored
         )
     }

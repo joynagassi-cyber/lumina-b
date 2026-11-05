@@ -71,7 +71,8 @@ fun LoginScreen(
     var pin by remember { mutableStateOf("") }
 
     // Aucun utilisateur : création du premier (trésorier)
-    var firstUserName by remember { mutableStateOf("") }
+    var firstUserFirstName by remember { mutableStateOf("") }
+    var firstUserLastName by remember { mutableStateOf("") }
     var firstUserPin by remember { mutableStateOf("") }
 
     Box(
@@ -122,11 +123,19 @@ fun LoginScreen(
 
             if (users.isEmpty()) {
                 OutlinedTextField(
-                    value = firstUserName,
-                    onValueChange = { firstUserName = it },
-                    label = { Text("Nom et prénom") },
+                    value = firstUserFirstName,
+                    onValueChange = { firstUserFirstName = it },
+                    label = { Text("Prénom") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("first_user_name")
+                    modifier = Modifier.fillMaxWidth().testTag("first_user_first_name")
+                )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = firstUserLastName,
+                    onValueChange = { firstUserLastName = it },
+                    label = { Text("Nom de famille") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("first_user_last_name")
                 )
                 Spacer(modifier = Modifier.height(10.dp))
                 OutlinedTextField(
@@ -141,8 +150,11 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
                     onClick = {
-                        if (firstUserName.isNotBlank() && firstUserPin.length >= 4) {
-                            onCreateFirstUser(firstUserName, UserRole.TRESORIER, firstUserPin)
+                        val personalName = listOf(firstUserFirstName.trim(), firstUserLastName.trim())
+                            .filter { it.isNotBlank() }
+                            .joinToString(" ")
+                        if (firstUserFirstName.isNotBlank() && firstUserLastName.isNotBlank() && firstUserPin.length >= 4) {
+                            onCreateFirstUser(personalName, UserRole.TRESORIER, firstUserPin)
                             firstUserPin = ""
                         }
                     },
