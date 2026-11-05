@@ -43,7 +43,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -118,7 +117,6 @@ fun SettingsScreen(
     onEnableCloudBackup: () -> Unit = {},
     onCheckCloudBackup: () -> Unit = {},
     onRestoreCloudBackup: () -> Unit = {},
-    cloudProgress: com.example.cloud.CloudBackupLocalStore.BackupProgress? = null,
     cloudBackupStatus: String = "",
     lastAutoBackupLabel: String = "",
     modifier: Modifier = Modifier
@@ -676,28 +674,6 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (cloudProgress != null) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().testTag("cloud_backup_progress"),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        if (cloudProgress.isRunning) "Sauvegarde en cours — ${cloudProgress.percent}%" else cloudProgress.message,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    LinearProgressIndicator(
-                        progress = { cloudProgress.percent / 100f },
-                        modifier = Modifier.fillMaxWidth().height(8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant
-                    )
-                    if (cloudProgress.isRunning) {
-                        Text(cloudProgress.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 Button(
                     onClick = onEnableCloudBackup,

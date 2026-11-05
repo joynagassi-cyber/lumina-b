@@ -60,7 +60,6 @@ object CloudBackupCoordinator {
         withContext(Dispatchers.IO) {
             val app = context.applicationContext
             val workspaceId = repository.workspaceId
-            CloudBackupLocalStore.setProgress(workspaceId, 2, "Préparation de la sauvegarde…")
             try {
                 val didPublish = CloudBackupLocks.withWorkspaceLock(workspaceId) {
                     val link = CloudBackupLocalStore.link(app, workspaceId)
@@ -69,10 +68,9 @@ object CloudBackupCoordinator {
                     publishCurrent(app, repository, SupabaseCloudClient(app), link)
                     true
                 }
-                CloudBackupLocalStore.finishProgress(
-                    workspaceId,
-                    if (didPublish) "Sauvegarde cloud terminée" else "Sauvegarde cloud non activée"
-                )
+                if (didPublish) {
+                    CloudBackupLocalStore.finishProgress(workspaceId, "Sauvegarde cloud terminée")
+                }
                 didPublish
             } catch (error: Exception) {
                 CloudBackupLocalStore.clearProgress(workspaceId)
@@ -185,10 +183,10 @@ object CloudBackupCoordinator {
         }
         val fingerprint = BackupService.cloudContentFingerprint(context, repository)
         if (CloudBackupLocalStore.lastFingerprint(context, repository.workspaceId) == fingerprint) {
-            CloudBackupLocalStore.setProgress(repository.workspaceId, 100, "Aucune modification : copie cloud déjà à jour.")
             CloudBackupLocalStore.setStatus(context, repository.workspaceId, "Sauvegarde cloud à jour.")
             return
         }
+        CloudBackupLocalStore.beginProgress(repository.workspaceId, "Préparation de la sauvegarde…")
         CloudBackupLocalStore.setProgress(repository.workspaceId, 8, "Préparation des données et justificatifs…")
         val bytes = BackupService.createCloudArchive(context, repository)
         require(bytes.size.toLong() in 1..MAX_CLOUD_BACKUP_BYTES) {
@@ -197,9 +195,16 @@ object CloudBackupCoordinator {
         val checksum = sha256(bytes)
         val objectPath = "churches/${link.churchId}/${UUID.randomUUID()}.lumina"
         CloudBackupLocalStore.setProgress(repository.workspaceId, 12, "Envoi de la sauvegarde…")
+        var lastReportedPercent = 12
+        var lastReportedAt = android.os.SystemClock.elapsedRealtime()
         client.uploadObject(objectPath, bytes) { sent, total ->
             val percent = if (total <= 0L) 85 else 12 + ((sent * 73L / total).toInt())
-            CloudBackupLocalStore.setProgress(repository.workspaceId, percent, "Envoi de la sauvegarde…")
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (percent >= lastReportedPercent + 1 || sent >= total || now - lastReportedAt >= 120L) {
+                CloudBackupLocalStore.setProgress(repository.workspaceId, percent, "Envoi des données vers l'église…")
+                lastReportedPercent = percent
+                lastReportedAt = now
+            }
         }
         CloudBackupLocalStore.setProgress(repository.workspaceId, 92, "Validation de la copie dans le cloud…")
         val latestLocalLink = CloudBackupLocalStore.link(context, repository.workspaceId)
