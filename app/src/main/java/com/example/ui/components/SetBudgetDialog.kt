@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -34,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -55,6 +57,9 @@ fun SetBudgetDialog(
     onDeleteBudget: ((id: Long) -> Unit)? = null
 ) {
     val expenseCategories = categories.filter { it.type == TransactionType.EXPENSE }
+    val categoryMenuMaxHeight = (LocalConfiguration.current.screenHeightDp.dp * 0.42f)
+        .coerceAtMost(320.dp)
+        .coerceAtLeast(140.dp)
     var selectedCategory by remember {
         mutableStateOf(initialCategory ?: expenseCategories.firstOrNull()?.name ?: "Alimentation")
     }
@@ -123,7 +128,8 @@ fun SetBudgetDialog(
 
                     ExposedDropdownMenu(
                         expanded = isDropdownExpanded,
-                        onDismissRequest = { isDropdownExpanded = false }
+                        onDismissRequest = { isDropdownExpanded = false },
+                        modifier = Modifier.heightIn(max = categoryMenuMaxHeight)
                     ) {
                         expenseCategories.forEach { cat ->
                             DropdownMenuItem(
