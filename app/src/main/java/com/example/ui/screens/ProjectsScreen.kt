@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -936,32 +937,28 @@ private fun ProjectDialog(
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(0.95f).heightIn(max = 760.dp),
+            modifier = if (showDateRangePicker) {
+                Modifier.fillMaxWidth(0.98f).fillMaxHeight(0.94f)
+            } else {
+                Modifier.fillMaxWidth(0.95f).heightIn(max = 760.dp)
+            },
             shape = RoundedCornerShape(26.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp
         ) {
-            Column(
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        if (showDateRangePicker) "Période de l'événement" else title,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                    TextButton(onClick = { if (showDateRangePicker) showDateRangePicker = false else onDismiss() }) {
-                        Text(if (showDateRangePicker) "Retour" else "Fermer")
+            if (showDateRangePicker) {
+                // The Material date picker contains its own vertical scrolling calendar.
+                // Do not put it under the form's verticalScroll: Compose can measure that
+                // nested scrollable with infinite height and crash the Activity.
+                Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Période de l'événement", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { showDateRangePicker = false }) { Text("Retour") }
                     }
-                }
-                Spacer(Modifier.height(8.dp))
-
-                if (showDateRangePicker) {
                     LuminaDateRangePickerPanel(
                         initialStartLocalMillis = startAtMillis,
                         initialEndLocalMillis = endAtMillis,
@@ -971,9 +968,23 @@ private fun ProjectDialog(
                             endAtMillis = end
                             showDateRangePicker = false
                         },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.weight(1f).fillMaxWidth()
                     )
-                } else {
+                }
+            } else {
+                Column(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        TextButton(onClick = onDismiss) { Text("Fermer") }
+                    }
+                    Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = name,
                         onValueChange = { name = it },

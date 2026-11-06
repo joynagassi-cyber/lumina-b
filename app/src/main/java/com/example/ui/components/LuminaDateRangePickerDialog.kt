@@ -3,12 +3,11 @@ package com.example.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DateRangePicker
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +43,7 @@ fun LuminaDateRangePickerPanel(
         initialSelectedEndDateMillis = initialEndLocalMillis?.let(::localTimestampToPickerUtcMillis)
     )
     val format = SimpleDateFormat("EEE d MMM yyyy", Locale.FRANCE)
-    Column(modifier = modifier) {
+    Column(modifier = modifier.fillMaxHeight()) {
         Text("Choisissez séparément les bornes de la période", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text("Touchez une date de début, puis une date de fin. Le calendrier mettra toute la plage en évidence.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(
@@ -66,7 +65,7 @@ fun LuminaDateRangePickerPanel(
             state = state,
             title = { Text("Période de l'événement", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) },
             showModeToggle = false,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 440.dp).testTag("project_date_range_picker")
+            modifier = Modifier.fillMaxWidth().weight(1f).testTag("project_date_range_picker")
         )
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
@@ -112,17 +111,18 @@ fun LuminaDateRangePickerDialog(
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Surface(
-            modifier = Modifier.fillMaxWidth(0.96f).heightIn(max = 760.dp),
+            modifier = Modifier.fillMaxWidth(0.96f).fillMaxHeight(0.92f),
             shape = RoundedCornerShape(28.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp
         ) {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState()).padding(20.dp)) {
+            Column(modifier = Modifier.fillMaxSize().padding(20.dp)) {
                 LuminaDateRangePickerPanel(
                     initialStartLocalMillis = initialStartLocalMillis,
                     initialEndLocalMillis = initialEndLocalMillis,
                     onCancel = onDismissRequest,
-                    onRangeSelected = onRangeSelected
+                    onRangeSelected = onRangeSelected,
+                    modifier = Modifier.weight(1f)
                 )
             }
         }
