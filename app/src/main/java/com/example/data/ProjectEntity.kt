@@ -31,7 +31,7 @@ data class ProjectEntity(
     val uid: String = UUID.randomUUID().toString(),
     val name: String,
     val description: String = "",
-    /** Objectif de collecte, 0 si aucun objectif n'est fixé. */
+    /** Collection goal for ordinary projects; event budget for EVENT records; 0 when unset. */
     val targetCents: Long = 0L,
     val isClosed: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
@@ -39,8 +39,64 @@ data class ProjectEntity(
     val isDeleted: Boolean = false,
     /** Nature fonctionnelle : projet libre, campagne, événement ou collecte dédiée. */
     @ColumnInfo(defaultValue = "'PROJECT'")
-    val kind: String = PROJECT_KIND_PROJECT
+    val kind: String = PROJECT_KIND_PROJECT,
+    /** Optional local-day timestamps; populated for scheduled projects such as events. */
+    val startAtMillis: Long? = null,
+    val endAtMillis: Long? = null,
+    /** Compact, forward-compatible checklist serialized as JSON for backup/sync. */
+    @ColumnInfo(defaultValue = "'[]'")
+    val actionItemsJson: String = "[]"
 )
+
+data class ProjectActionItem(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val isDone: Boolean = false,
+    /** Nested checklist items are kept in the same JSON field for backup/sync compatibility. */
+    val subTasks: List<ProjectActionItem> = emptyList()
+)
+
+fun decodeProjectActionItems(json: String): List<ProjectActionItem> = runCatching {
+    fun parse(items: org.json.JSONArray): List<ProjectActionItem> = (0 until items.length()).mapNotNull { index ->
+        val item = items.optJSONObject(index) ?: return@mapNotNull null
+        val title = item.optString("title", "").trim()
+        if (title.isBlank()) null else ProjectActionItem(
+            id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
+            title = title,
+            isDone = item.optBoolean("isDone", false),
+            subTasks = parse(item.optJSONArray("subTasks") ?: org.json.JSONArray())
+        )
+    }
+    parse(org.json.JSONArray(json))
+}.getOrDefault(emptyList())
+
+/** Move one checklist entry by one position while preserving its full nested subtree. */
+fun moveProjectActionItem(items: List<ProjectActionItem>, fromIndex: Int, direction: Int): List<ProjectActionItem> {
+    if (fromIndex !in items.indices || direction == 0 || items.size < 2) return items
+    val toIndex = (fromIndex + direction.sign).coerceIn(items.indices)
+    if (toIndex == fromIndex) return items
+    return items.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+}
+
+private val Int.sign: Int get() = when {
+    this > 0 -> 1
+    this < 0 -> -1
+    else -> 0
+}
+
+fun encodeProjectActionItems(items: List<ProjectActionItem>): String {
+    fun serialize(entries: List<ProjectActionItem>): org.json.JSONArray = org.json.JSONArray().apply {
+        entries.filter { it.title.isNotBlank() }.forEach { item ->
+            put(org.json.JSONObject().apply {
+                put("id", item.id)
+                put("title", item.title.trim())
+                put("isDone", item.isDone)
+                put("subTasks", serialize(item.subTasks))
+            })
+        }
+    }
+    return serialize(items).toString()
+}
 
 @Dao
 interface ProjectDao {

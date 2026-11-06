@@ -128,6 +128,36 @@ object CloudBackupLocalStore {
 
     data class Link(val churchId: String, val generation: Long, val enabled: Boolean)
 
+    /** Allow cloud uploads on at most three distinct local calendar days in any seven-day window. */
+    @Synchronized
+    fun claimSyncDay(context: Context, workspaceId: String, nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val prefs = preferences(context)
+        val key = "${prefix(workspaceId)}sync_days"
+        val formatter = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT)
+        val todayCalendar = java.util.Calendar.getInstance().apply {
+            timeInMillis = nowMillis
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val todayStart = todayCalendar.timeInMillis
+        val todayKey = formatter.format(java.util.Date(todayStart))
+        val cutoff = todayCalendar.clone() as java.util.Calendar
+        cutoff.add(java.util.Calendar.DAY_OF_YEAR, -6)
+        val cutoffMillis = cutoff.timeInMillis
+        val retained = prefs.getStringSet(key, emptySet()).orEmpty()
+            .mapNotNull { value -> runCatching { formatter.parse(value)?.time }.getOrNull()?.let { value to it } }
+            .filter { (_, timestamp) -> timestamp in cutoffMillis..todayStart }
+            .map { (value, _) -> value }
+            .toMutableSet()
+        if (todayKey in retained) return true
+        if (retained.size >= 3) return false
+        retained += todayKey
+        prefs.edit().putStringSet(key, retained).apply()
+        return true
+    }
+
     private fun preferences(context: Context) =
         context.applicationContext.getSharedPreferences("lumina_cloud_backup_links", Context.MODE_PRIVATE)
 

@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
         ProjectEntity::class,
         SyncContributorEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -62,7 +62,7 @@ abstract class LuminaDatabase : RoomDatabase() {
                     databaseName
                 )
                     .addCallback(LuminaDatabaseCallback(DATABASE_SCOPE, databaseName))
-                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+                    .addMigrations(MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
                     // Les installations anciennes conservent leurs migrations explicites.
                     .fallbackToDestructiveMigrationFrom(1, 2, 3, 4)
                     .build()
@@ -188,6 +188,15 @@ abstract class LuminaDatabase : RoomDatabase() {
                         "PRIMARY KEY(`uid`))"
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_contributors_displayName` ON `sync_contributors` (`displayName`)")
+            }
+        }
+
+        /** Version 12 : périodes et liste d'actions pour les projets, données existantes conservées. */
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `projects` ADD COLUMN `startAtMillis` INTEGER")
+                db.execSQL("ALTER TABLE `projects` ADD COLUMN `endAtMillis` INTEGER")
+                db.execSQL("ALTER TABLE `projects` ADD COLUMN `actionItemsJson` TEXT NOT NULL DEFAULT '[]'")
             }
         }
 

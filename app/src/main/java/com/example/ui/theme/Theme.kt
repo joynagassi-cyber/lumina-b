@@ -122,7 +122,7 @@ private fun darkSchemeWith(accent: Color) = darkColorScheme(
 
 /** Palette Glass : panneaux translucides, traits lumineux et contraste doux. */
 private fun glassLightSchemeWith(accent: Color) = lightColorScheme(
-    primary = accent,
+    primary = accent.copy(alpha = 0.88f),
     onPrimary = accent.onColor(),
     primaryContainer = accent.copy(alpha = 0.14f),
     onPrimaryContainer = lerp(Color(0xFF111827), accent, 0.55f),
@@ -137,8 +137,8 @@ private fun glassLightSchemeWith(accent: Color) = lightColorScheme(
     onSurface = Color(0xFF182235),
     surfaceVariant = Color(0xA6FFFFFF),
     onSurfaceVariant = Color(0xFF4A5A70),
-    outline = Color(0xBFFFFFFF),
-    outlineVariant = Color(0x66788AA1),
+    outline = Color(0x66788AA1),
+    outlineVariant = Color(0x4D788AA1),
     surfaceTint = Color.Transparent,
     surfaceContainerLowest = Color(0xE6FFFFFF),
     surfaceContainerLow = Color(0xCCFFFFFF),
@@ -148,7 +148,7 @@ private fun glassLightSchemeWith(accent: Color) = lightColorScheme(
 )
 
 private fun glassDarkSchemeWith(accent: Color) = darkColorScheme(
-    primary = lerp(accent, Color.White, 0.35f),
+    primary = lerp(accent, Color.White, 0.35f).copy(alpha = 0.92f),
     onPrimary = Color(0xFF10131B),
     primaryContainer = accent.copy(alpha = 0.26f),
     onPrimaryContainer = Color(0xFFF3F6FF),
