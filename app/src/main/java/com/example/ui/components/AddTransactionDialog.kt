@@ -6,8 +6,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +27,7 @@ import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Settings
@@ -69,6 +68,8 @@ import com.example.data.CategoryEntity
 import com.example.data.ProjectEntity
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
+import com.example.util.localDateAtOffset
+import com.example.util.sameLocalDate
 import com.example.ui.theme.ExpenseRed
 import com.example.ui.theme.ExpenseRedLight
 import com.example.ui.theme.ExpenseBgDark
@@ -85,7 +86,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddTransactionDialog(
     categories: List<CategoryEntity> = emptyList(),
@@ -155,6 +155,8 @@ fun AddTransactionDialog(
     }
 
     var selectedProjectId by remember { mutableLongStateOf(initial?.projectId ?: 0L) }
+    var registerMenuExpanded by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
     var projectMenuExpanded by remember { mutableStateOf(false) }
     var customCategory by remember { mutableStateOf("") }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
@@ -255,39 +257,60 @@ fun AddTransactionDialog(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
-                FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    cashRegisters.forEach { caisse ->
-                        val isSelected = selectedRegisterId == caisse.id
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedRegisterId = caisse.id },
-                            leadingIcon = {
-                                Icon(
-                                    imageVector = Icons.Default.Payments,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            label = { Text(caisse.name, fontSize = 12.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                selectedLabelColor = MaterialTheme.colorScheme.onSurface
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = MaterialTheme.colorScheme.outline,
-                                selectedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                borderWidth = 1.dp,
-                                selectedBorderWidth = 1.5.dp
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    val selectedRegisterName = cashRegisters.firstOrNull { it.id == selectedRegisterId }?.name
+                        ?: cashRegisters.firstOrNull()?.name
+                        ?: "Aucune caisse disponible"
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 54.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .clickable(enabled = cashRegisters.isNotEmpty()) { registerMenuExpanded = true }
+                            .testTag("transaction_register_dropdown"),
+                        shape = RoundedCornerShape(13.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(10.dp))
+                                Column {
+                                    Text("Caisse sélectionnée", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(selectedRegisterName, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir une caisse", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = registerMenuExpanded,
+                        onDismissRequest = { registerMenuExpanded = false },
+                        modifier = Modifier.heightIn(max = 340.dp)
+                    ) {
+                        cashRegisters.forEach { register ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        register.name,
+                                        fontWeight = if (selectedRegisterId == register.id) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                onClick = {
+                                    selectedRegisterId = register.id
+                                    registerMenuExpanded = false
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                },
+                                modifier = Modifier.testTag("register_option_${register.id}")
                             )
-                        )
+                        }
                     }
                 }
 
@@ -507,34 +530,56 @@ fun AddTransactionDialog(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Raccourcis Date
+                // Calendrier de date : toutes les dates passées restent accessibles.
                 Text(
-                    text = "Date de l'opération : ${dateFormat.format(Date(selectedTimestamp))}",
+                    text = "Date de l'opération",
                     style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(6.dp))
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 54.dp)
+                        .clip(RoundedCornerShape(13.dp))
+                        .clickable { showDatePicker = true }
+                        .testTag("transaction_date_picker_button"),
+                    shape = RoundedCornerShape(13.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            dateFormat.format(Date(selectedTimestamp)),
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Ouvrir le calendrier", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     val now = System.currentTimeMillis()
-                    val dayMillis = 24 * 60 * 60 * 1000L
-
+                    val yesterday = localDateAtOffset(now, -1)
                     TextButton(
                         onClick = { selectedTimestamp = now },
                         colors = ButtonDefaults.textButtonColors(
-                            containerColor = if (selectedTimestamp >= now - (dayMillis / 2)) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                            containerColor = if (sameLocalDate(selectedTimestamp, now)) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                         )
-                    ) {
-                        Text("Aujourd'hui", fontSize = 12.sp)
-                    }
-
+                    ) { Text("Aujourd'hui", fontSize = 12.sp) }
                     TextButton(
-                        onClick = { selectedTimestamp = now - dayMillis },
+                        onClick = { selectedTimestamp = yesterday },
                         colors = ButtonDefaults.textButtonColors(
-                            containerColor = if (selectedTimestamp in (now - (dayMillis * 2))..(now - (dayMillis / 2))) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                            containerColor = if (sameLocalDate(selectedTimestamp, yesterday)) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                         )
-                    ) {
-                        Text("Hier", fontSize = 12.sp)
-                    }
+                    ) { Text("Hier", fontSize = 12.sp) }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -671,8 +716,16 @@ fun AddTransactionDialog(
             }
         }
     }
-}
 
+    if (showDatePicker) {
+        LuminaDatePickerDialog(
+            initialLocalDateMillis = selectedTimestamp,
+            title = "Date de l'opération",
+            onDismissRequest = { showDatePicker = false },
+            onDateSelected = { selectedTimestamp = it; showDatePicker = false }
+        )
+    }
+}
 
 @Composable
 private fun TransactionTypeOption(

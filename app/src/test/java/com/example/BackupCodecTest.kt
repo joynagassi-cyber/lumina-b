@@ -62,7 +62,15 @@ class BackupCodecTest {
             CashRegisterEntity(id = 2, name = "Compte bancaire", iconType = "bank")
         ),
         projects = listOf(
-            ProjectEntity(id = 42, name = "Construction du temple", targetCents = 5_000_000, kind = "CAMPAIGN")
+            ProjectEntity(
+                id = 42,
+                name = "Conférence annuelle",
+                targetCents = 5_000_000,
+                kind = "EVENT",
+                startAtMillis = 1_790_000_000_000L,
+                endAtMillis = 1_790_172_800_000L,
+                actionItemsJson = "[{\"id\":\"task-1\",\"title\":\"Réserver la salle\",\"isDone\":true}]"
+            )
         ),
         transactions = listOf(
             TransactionEntity(
@@ -105,7 +113,10 @@ class BackupCodecTest {
         assertEquals(1, relu.memberCount)
         assertEquals(2, relu.registers.size)
         assertEquals(1, relu.projects.size)
-        assertEquals("CAMPAIGN", relu.projects.single().kind)
+        assertEquals("EVENT", relu.projects.single().kind)
+        assertEquals(1_790_000_000_000L, relu.projects.single().startAtMillis)
+        assertEquals(1_790_172_800_000L, relu.projects.single().endAtMillis)
+        assertEquals("[{\"id\":\"task-1\",\"title\":\"Réserver la salle\",\"isDone\":true}]", relu.projects.single().actionItemsJson)
         assertEquals(1, relu.budgets.size)
         assertEquals(1, relu.users.size)
 

@@ -90,6 +90,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -174,6 +176,11 @@ class MainActivity : ComponentActivity() {
                 factory = FinancialViewModelFactory(repository, applicationContext)
             )
             val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+            var showBrandSplash by remember { mutableStateOf(true) }
+            LaunchedEffect(Unit) {
+                kotlinx.coroutines.delay(700L)
+                showBrandSplash = false
+            }
             LaunchedEffect(activeWorkspace.id, uiState.profile.churchName, uiState.profile.onboardingCompleted) {
                 if (uiState.profile.onboardingCompleted) {
                     workspaceCatalog.updateDisplayName(activeWorkspace.id, uiState.profile.displayName)
@@ -184,7 +191,15 @@ class MainActivity : ComponentActivity() {
                 themeMode = uiState.themeMode,
                 accentHex = uiState.profile.accentColorHex
             ) {
-                LuminaApp(
+                if (showBrandSplash) {
+                    com.example.ui.components.LuminaBrandSplashScreen(
+                        isDark = when (uiState.themeMode) {
+                            ThemeMode.DARK, ThemeMode.GLASS_DARK -> true
+                            ThemeMode.LIGHT, ThemeMode.GLASS_LIGHT -> false
+                            ThemeMode.SYSTEM -> androidx.compose.foundation.isSystemInDarkTheme()
+                        }
+                    )
+                } else LuminaApp(
                     viewModel = viewModel,
                     uiState = uiState,
                     workspaces = workspaceCatalog.getWorkspaces(),
@@ -218,6 +233,7 @@ fun LuminaApp(
     val context = LocalContext.current
     var currentScreen by remember { mutableStateOf(AppScreen.DASHBOARD) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showCustomPeriodPicker by remember { mutableStateOf(false) }
     var showCategoryManager by remember { mutableStateOf(false) }
     var showProfileEditor by remember { mutableStateOf(false) }
     var showChurchProfile by remember { mutableStateOf(false) }
@@ -246,37 +262,23 @@ fun LuminaApp(
         if (period != com.example.ui.PeriodFilter.PERSONNALISEE) {
             viewModel.setPeriod(period)
         } else {
-            val today = java.util.Calendar.getInstance()
-            val firstPicker = android.app.DatePickerDialog(
-                context,
-                { _, year, month, day ->
-                    val start = java.util.Calendar.getInstance().apply {
-                        set(year, month, day, 0, 0, 0)
-                        set(java.util.Calendar.MILLISECOND, 0)
-                    }
-                    val endSeed = java.util.Calendar.getInstance().let { current ->
-                        if (current.timeInMillis < start.timeInMillis) start else current
-                    }
-                    android.app.DatePickerDialog(
-                        context,
-                        { _, endYear, endMonth, endDay ->
-                            val end = java.util.Calendar.getInstance().apply {
-                                set(endYear, endMonth, endDay, 23, 59, 59)
-                                set(java.util.Calendar.MILLISECOND, 999)
-                            }
-                            viewModel.setCustomPeriod(start.timeInMillis, end.timeInMillis)
-                        },
-                        endSeed.get(java.util.Calendar.YEAR),
-                        endSeed.get(java.util.Calendar.MONTH),
-                        endSeed.get(java.util.Calendar.DAY_OF_MONTH)
-                    ).apply { setTitle("Choisir la date de fin") }.show()
-                },
-                today.get(java.util.Calendar.YEAR),
-                today.get(java.util.Calendar.MONTH),
-                today.get(java.util.Calendar.DAY_OF_MONTH)
-            ).apply { setTitle("Choisir la date de début") }
-            firstPicker.show()
+            showCustomPeriodPicker = true
         }
+    }
+
+    if (showCustomPeriodPicker) {
+        com.example.ui.components.LuminaDateRangePickerDialog(
+            initialStartLocalMillis = null,
+            initialEndLocalMillis = null,
+            onDismissRequest = { showCustomPeriodPicker = false },
+            onRangeSelected = { start, end ->
+                viewModel.setCustomPeriod(
+                    com.example.util.localStartOfDay(start),
+                    com.example.util.localEndOfDay(end)
+                )
+                showCustomPeriodPicker = false
+            }
+        )
     }
 
     // Gestion du retour système
@@ -859,14 +861,30 @@ fun LuminaApp(
                         .padding(horizontal = 16.dp, vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Surface(
-                        shape = com.example.ui.designsystem.LuminaTokens.ShapePill,
-                        color = MaterialTheme.colorScheme.surface,
-                        border = androidx.compose.foundation.BorderStroke(
+                    val glassNav = MaterialTheme.colorScheme.background.alpha == 0f
+                    val navBorder = if (glassNav) {
+                        androidx.compose.foundation.BorderStroke(
+                            width = com.example.ui.designsystem.LuminaTokens.BorderWidthThin,
+                            brush = Brush.linearGradient(
+                                listOf(
+                                    Color.White.copy(alpha = 0.72f),
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+                                    Color.White.copy(alpha = 0.24f)
+                                )
+                            )
+                        )
+                    } else {
+                        androidx.compose.foundation.BorderStroke(
                             width = com.example.ui.designsystem.LuminaTokens.BorderWidthThin,
                             color = MaterialTheme.colorScheme.outline
-                        ),
-                        shadowElevation = 6.dp,
+                        )
+                    }
+                    Surface(
+                        shape = com.example.ui.designsystem.LuminaTokens.ShapePill,
+                        color = if (glassNav) MaterialTheme.colorScheme.surface.copy(alpha = 0.58f)
+                        else MaterialTheme.colorScheme.surface,
+                        border = navBorder,
+                        shadowElevation = if (glassNav) 12.dp else 6.dp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("bottom_nav_bar")
@@ -1023,12 +1041,13 @@ fun LuminaApp(
                         projects = uiState.projectSummaries,
                         transactions = uiState.allTransactions,
                         createSignal = if (createTarget == AppScreen.PROJECTS) createSignal else 0,
-                        onAddProject = { name, description, target, kind ->
-                            viewModel.addProject(name, description, target, kind)
+                        onAddProject = { name, description, target, kind, start, end, actions ->
+                            viewModel.addProject(name, description, target, kind, start, end, actions)
                         },
-                        onUpdateProject = { project, name, description, target, closed, kind ->
-                            viewModel.updateProject(project, name, description, target, closed, kind)
+                        onUpdateProject = { project, name, description, target, closed, kind, start, end, actions ->
+                            viewModel.updateProject(project, name, description, target, closed, kind, start, end, actions)
                         },
+                        onUpdateProjectActions = { project, actions -> viewModel.updateProjectActions(project, actions) },
                         onDeleteProject = { project -> viewModel.deleteProject(project) },
                         onCreateConsumed = { if (createTarget == AppScreen.PROJECTS) createTarget = null }
                     )

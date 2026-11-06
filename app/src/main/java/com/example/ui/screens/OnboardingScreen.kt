@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import com.example.data.ChurchProfileEntity
+import com.example.ui.components.LuminaFeatureChapters
+import com.example.ui.components.LuminaFeatureTour
 import com.example.ui.designsystem.LuminaBranding
 import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.theme.AccentPalettes
@@ -78,10 +80,10 @@ import com.example.export.BackupSnapshot
 /**
  * Assistant de premier lancement.
  *
- * Six étapes guidées : présentation, identité, aperçu des finances, confidentialité,
- * accès utilisateurs et identité visuelle. Le nom est le seul champ obligatoire.
- * Le résultat est enregistré comme
- * profil local de l'appareil ; aucune donnée ne quitte le téléphone.
+ * Le parcours de découverte des fonctionnalités est fourni par la visite guidée
+ * partagée avec Paramètres. L'assistant d'église qui suit conserve ses six étapes
+ * de configuration et ses règles de sauvegarde locale ; le nom reste le seul champ
+ * obligatoire et aucune donnée ne quitte le téléphone.
  */
 @Composable
 fun OnboardingScreen(
@@ -95,7 +97,7 @@ fun OnboardingScreen(
     }
 ) {
     val context = LocalContext.current
-    var introPage by remember { mutableIntStateOf(0) }
+    var introPage by remember { mutableIntStateOf(if (startAtStep > 0) LuminaFeatureChapters.size else 0) }
     var step by remember { mutableIntStateOf(startAtStep.coerceIn(0, 5)) }
     var selectedArchiveUri by remember { mutableStateOf<Uri?>(null) }
     var showJoinDialog by remember { mutableStateOf(false) }
@@ -148,15 +150,18 @@ fun OnboardingScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag("onboarding_screen")
     ) {
-        if (introPage < 3) {
-            ChurchIntroScreen(
+        if (introPage < LuminaFeatureChapters.size) {
+            LuminaFeatureTour(
                 page = introPage,
-                accentColor = accent,
-                joinError = joinError,
-                joining = joining,
-                onContinue = { introPage = (introPage + 1).coerceAtMost(3) },
-                onSkip = { introPage = 3 },
-                onJoin = { archivePicker.launch(arrayOf("*/*")) }
+                onPrevious = { introPage = (introPage - 1).coerceAtLeast(0) },
+                onNext = {
+                    introPage = if (introPage == LuminaFeatureChapters.lastIndex) LuminaFeatureChapters.size
+                    else introPage + 1
+                },
+                onSkip = { introPage = LuminaFeatureChapters.size },
+                onJoinFromFile = { archivePicker.launch(arrayOf("*/*")) },
+                finalActionLabel = "Configurer mon église",
+                closeLabel = "Passer"
             )
         } else {
         Column(
@@ -384,129 +389,6 @@ fun OnboardingScreen(
         }
     }
 }
-
-@Composable
-private fun ChurchIntroScreen(
-    page: Int,
-    accentColor: Color,
-    joinError: String?,
-    joining: Boolean,
-    onContinue: () -> Unit,
-    onSkip: () -> Unit,
-    onJoin: () -> Unit
-) {
-    val slides = listOf(
-        IntroSlide(
-            icon = Icons.Default.AccountBalance,
-            title = "Une gestion financière claire",
-            description = "Suivez les offrandes, les dépenses et les soldes de votre église dans un espace simple et lisible.",
-            badge = "Finances sous contrôle"
-        ),
-        IntroSlide(
-            icon = Icons.Default.PieChart,
-            title = "Tout votre dossier au même endroit",
-            description = "Caisses, budgets, projets, collectes et historique restent liés au même dossier d'église.",
-            badge = "Budgets • Caisses • Projets"
-        ),
-        IntroSlide(
-            icon = Icons.Default.Groups,
-            title = "Une équipe qui avance ensemble",
-            description = "Partagez un fichier Lumina hors ligne. Chaque personne crée son profil et son code PIN sur son appareil.",
-            badge = "Partage maîtrisé, sans cloud"
-        )
-    )
-    val slide = slides[page.coerceIn(0, slides.lastIndex)]
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text("LUMINA  •  ÉGLISE", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.ExtraBold, color = accentColor)
-            TextButton(onClick = onSkip) { Text("Passer") }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            repeat(3) { index ->
-                Box(
-                    Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(8.dp))
-                        .background(if (index <= page) accentColor else MaterialTheme.colorScheme.surfaceVariant)
-                )
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(270.dp)
-                .clip(RoundedCornerShape(30.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Box(
-                Modifier.size(208.dp).clip(CircleShape).background(accentColor.copy(alpha = 0.08f))
-            )
-            Box(
-                Modifier.size(146.dp).clip(CircleShape).background(accentColor.copy(alpha = 0.13f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(slide.icon, contentDescription = null, tint = accentColor, modifier = Modifier.size(74.dp))
-            }
-            Surface(
-                modifier = Modifier.align(Alignment.BottomCenter).padding(horizontal = 22.dp, vertical = 18.dp),
-                shape = RoundedCornerShape(18.dp),
-                color = Color.White,
-                shadowElevation = 8.dp
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = accentColor, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(slide.badge, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-        Text(slide.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.ExtraBold)
-        Text(slide.description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (!joinError.isNullOrBlank()) {
-            Text(joinError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-        }
-        Button(
-            onClick = onContinue,
-            enabled = !joining,
-            modifier = Modifier.fillMaxWidth().height(54.dp).testTag("church_intro_continue"),
-            shape = RoundedCornerShape(18.dp)
-        ) {
-            Text(if (page == 2) "Configurer mon église" else "Suivant", fontWeight = FontWeight.Bold)
-            Spacer(Modifier.width(8.dp))
-            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
-        }
-        if (page == 0) {
-            TextButton(
-                onClick = onJoin,
-                enabled = !joining,
-                modifier = Modifier.fillMaxWidth().testTag("join_with_lumina_file")
-            ) {
-                Icon(Icons.Default.Description, contentDescription = null, tint = accentColor)
-                Spacer(Modifier.width(8.dp))
-                Text("J'ai un fichier Lumina — rejoindre mon église", color = accentColor)
-            }
-        }
-    }
-}
-
-private data class IntroSlide(
-    val icon: ImageVector,
-    val title: String,
-    val description: String,
-    val badge: String
-)
 
 @Composable
 private fun OnboardingInfoStep(

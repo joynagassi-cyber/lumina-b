@@ -39,8 +39,43 @@ data class ProjectEntity(
     val isDeleted: Boolean = false,
     /** Nature fonctionnelle : projet libre, campagne, événement ou collecte dédiée. */
     @ColumnInfo(defaultValue = "'PROJECT'")
-    val kind: String = PROJECT_KIND_PROJECT
+    val kind: String = PROJECT_KIND_PROJECT,
+    /** Optional local-day timestamps; populated for scheduled projects such as events. */
+    val startAtMillis: Long? = null,
+    val endAtMillis: Long? = null,
+    /** Compact, forward-compatible checklist serialized as JSON for backup/sync. */
+    @ColumnInfo(defaultValue = "'[]'")
+    val actionItemsJson: String = "[]"
 )
+
+data class ProjectActionItem(
+    val id: String = UUID.randomUUID().toString(),
+    val title: String,
+    val isDone: Boolean = false
+)
+
+fun decodeProjectActionItems(json: String): List<ProjectActionItem> = runCatching {
+    val items = org.json.JSONArray(json)
+    (0 until items.length()).mapNotNull { index ->
+        val item = items.optJSONObject(index) ?: return@mapNotNull null
+        val title = item.optString("title", "").trim()
+        if (title.isBlank()) null else ProjectActionItem(
+            id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
+            title = title,
+            isDone = item.optBoolean("isDone", false)
+        )
+    }
+}.getOrDefault(emptyList())
+
+fun encodeProjectActionItems(items: List<ProjectActionItem>): String = org.json.JSONArray().apply {
+    items.filter { it.title.isNotBlank() }.forEach { item ->
+        put(org.json.JSONObject().apply {
+            put("id", item.id)
+            put("title", item.title.trim())
+            put("isDone", item.isDone)
+        })
+    }
+}.toString()
 
 @Dao
 interface ProjectDao {

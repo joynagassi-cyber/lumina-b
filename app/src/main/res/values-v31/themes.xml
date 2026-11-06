@@ -1,14 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!--
-      Android 12+ (API 31) : SplashScreen API.
-      Le système affiche un écran de démarrage construit à partir de ces attributs.
-      L'icône n'est volontairement pas redéfinie : Android utilise alors l'icône
-      adaptative de l'application (@mipmap/ic_launcher), correctement masquée.
-      Les versions < 31 utilisent values/themes.xml (comportement inchangé).
-    -->
+    <!-- Android 12+: native splash in white/day and true OLED black/night. -->
     <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/splash_background</item>
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/lumina_brand_mark_color</item>
         <item name="android:windowSplashScreenIconBackgroundColor">@color/splash_background</item>
     </style>
 </resources>

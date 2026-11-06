@@ -45,7 +45,7 @@ data class BackupSnapshot(
 object BackupCodec {
 
     const val FORMAT = "lumina-sauvegarde"
-    const val VERSION = 1
+    const val VERSION = 2
 
     fun encode(snapshot: BackupSnapshot): String {
         val root = JSONObject()
@@ -207,6 +207,9 @@ object BackupCodec {
                             put("updatedAt", p.updatedAt)
                             put("isDeleted", p.isDeleted)
                             put("kind", p.kind)
+                            put("startAtMillis", p.startAtMillis)
+                            put("endAtMillis", p.endAtMillis)
+                            put("actionItemsJson", p.actionItemsJson)
                         }
                     )
                 }
@@ -369,7 +372,10 @@ object BackupCodec {
                     createdAt = o.optLong("createdAt", 0L),
                     updatedAt = o.optLong("updatedAt", 0L),
                     isDeleted = o.optBoolean("isDeleted", false),
-                    kind = o.optString("kind", "PROJECT")
+                    kind = o.optString("kind", "PROJECT"),
+                    startAtMillis = o.takeIf { it.has("startAtMillis") && !it.isNull("startAtMillis") }?.optLong("startAtMillis"),
+                    endAtMillis = o.takeIf { it.has("endAtMillis") && !it.isNull("endAtMillis") }?.optLong("endAtMillis"),
+                    actionItemsJson = o.optString("actionItemsJson", "[]")
                 )
             },
             transactions = array(root, "transactions").map { o ->

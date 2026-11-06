@@ -47,7 +47,7 @@ data class SyncBundle(
 object SyncBundleCodec {
 
     const val FORMAT = "lumina-sync"
-    const val VERSION = 3
+    const val VERSION = 4
 
     class UnsupportedFormat(message: String) : Exception(message)
 
@@ -148,6 +148,9 @@ object SyncBundleCodec {
                 put("updatedAt", project.updatedAt)
                 put("isDeleted", project.isDeleted)
                 put("kind", project.kind)
+                put("startAtMillis", project.startAtMillis)
+                put("endAtMillis", project.endAtMillis)
+                put("actionItemsJson", project.actionItemsJson)
             })
         }
         root.put("projects", projects)
@@ -287,7 +290,10 @@ object SyncBundleCodec {
                 createdAt = obj.optLong("createdAt"),
                 updatedAt = obj.optLong("updatedAt"),
                 isDeleted = obj.optBoolean("isDeleted"),
-                kind = obj.optString("kind", "PROJECT")
+                kind = obj.optString("kind", "PROJECT"),
+                startAtMillis = obj.takeIf { it.has("startAtMillis") && !it.isNull("startAtMillis") }?.optLong("startAtMillis"),
+                endAtMillis = obj.takeIf { it.has("endAtMillis") && !it.isNull("endAtMillis") }?.optLong("endAtMillis"),
+                actionItemsJson = obj.optString("actionItemsJson", "[]")
             )
         }
 

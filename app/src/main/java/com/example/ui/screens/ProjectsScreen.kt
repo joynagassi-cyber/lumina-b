@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Savings
@@ -49,11 +51,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.example.data.ProjectEntity
+import com.example.data.ProjectActionItem
+import com.example.data.decodeProjectActionItems
+import com.example.data.encodeProjectActionItems
+import com.example.ui.components.LuminaDateRangePickerDialog
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.ProjectSummary
@@ -64,6 +74,7 @@ import com.example.ui.theme.IncomeGreen
 import com.example.util.CurrencyFormatter
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Calendar
 import java.util.Locale
 
 /**
@@ -75,8 +86,9 @@ fun ProjectsScreen(
     projects: List<ProjectSummary>,
     transactions: List<TransactionEntity> = emptyList(),
     createSignal: Int = 0,
-    onAddProject: (String, String, Long, String) -> Unit,
-    onUpdateProject: (ProjectEntity, String, String, Long, Boolean, String) -> Unit,
+    onAddProject: (String, String, Long, String, Long?, Long?, String) -> Unit,
+    onUpdateProject: (ProjectEntity, String, String, Long, Boolean, String, Long?, Long?, String) -> Unit,
+    onUpdateProjectActions: (ProjectEntity, String) -> Unit = { _, _ -> },
     onDeleteProject: (ProjectEntity) -> Unit,
     onCreateConsumed: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -101,17 +113,8 @@ fun ProjectsScreen(
                 it.projectId == selectedProject.id && !it.isDeleted && !it.isNeutralised
             }.sortedByDescending { it.timestamp },
             onBack = { selectedProjectId = null },
-            onEdit = {
-                editing = ProjectEntity(
-                    id = selectedProject.id,
-                    uid = selectedProject.uid,
-                    name = selectedProject.name,
-                    description = selectedProject.description,
-                    targetCents = selectedProject.targetCents,
-                    isClosed = selectedProject.isClosed,
-                    kind = selectedProject.kind
-                )
-            }
+            onUpdateActions = { actionItemsJson -> onUpdateProjectActions(selectedProject.toEntity(), actionItemsJson) },
+            onEdit = { editing = selectedProject.toEntity() }
         )
     } else {
     Column(
@@ -328,8 +331,8 @@ fun ProjectsScreen(
             title = "Nouveau projet",
             initial = null,
             onDismiss = { creating = false },
-            onConfirm = { name, description, target, _, kind ->
-                onAddProject(name, description, target, kind)
+            onConfirm = { name, description, target, _, kind, start, end, actions ->
+                onAddProject(name, description, target, kind, start, end, actions)
                 creating = false
             }
         )
@@ -340,8 +343,8 @@ fun ProjectsScreen(
             title = "Modifier le projet",
             initial = project,
             onDismiss = { editing = null },
-            onConfirm = { name, description, target, closed, kind ->
-                onUpdateProject(project, name, description, target, closed, kind)
+            onConfirm = { name, description, target, closed, kind, start, end, actions ->
+                onUpdateProject(project, name, description, target, closed, kind, start, end, actions)
                 editing = null
             }
         )
@@ -360,17 +363,7 @@ fun ProjectsScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        onDeleteProject(
-                            ProjectEntity(
-                                id = project.id,
-                                uid = project.uid,
-                                name = project.name,
-                                description = project.description,
-                                targetCents = project.targetCents,
-                                isClosed = project.isClosed,
-                                kind = project.kind
-                            )
-                        )
+                        onDeleteProject(project.toEntity())
                         deleting = null
                     }
                 ) {
@@ -389,6 +382,7 @@ private fun ProjectDetailPanel(
     project: ProjectSummary,
     transactions: List<TransactionEntity>,
     onBack: () -> Unit,
+    onUpdateActions: (String) -> Unit,
     onEdit: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy · HH:mm", Locale.FRANCE) }
@@ -457,6 +451,20 @@ private fun ProjectDetailPanel(
             }
         }
 
+        if (project.kind == "EVENT") {
+            Spacer(Modifier.height(16.dp))
+            ProjectEventCalendar(
+                startAtMillis = project.startAtMillis,
+                endAtMillis = project.endAtMillis
+            )
+            Spacer(Modifier.height(12.dp))
+            EventActionsCard(
+                projectId = project.id,
+                actionItemsJson = project.actionItemsJson,
+                onActionsChanged = onUpdateActions
+            )
+        }
+
         Spacer(Modifier.height(20.dp))
         Text("Mouvements rattachés", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(
@@ -514,6 +522,229 @@ private fun ProjectDetailPanel(
     }
 }
 
+@Composable
+private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?) {
+    val initialMonth = remember(startAtMillis, endAtMillis) {
+        Calendar.getInstance().apply {
+            timeInMillis = startAtMillis ?: System.currentTimeMillis()
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 12)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+    }
+    var displayedMonth by remember(startAtMillis, endAtMillis) { mutableStateOf(initialMonth) }
+    val monthFormatter = remember { SimpleDateFormat("MMMM yyyy", Locale.FRANCE) }
+    val shortDateFormatter = remember { SimpleDateFormat("d MMM yyyy", Locale.FRANCE) }
+    val accessibleDateFormatter = remember { SimpleDateFormat("EEEE d MMMM yyyy", Locale.FRANCE) }
+    val rangeLabel = if (startAtMillis != null && endAtMillis != null) {
+        "${shortDateFormatter.format(Date(startAtMillis))}  –  ${shortDateFormatter.format(Date(endAtMillis))}"
+    } else "Dates non définies — modifiez l'événement pour choisir sa période."
+    val monthCalendar = Calendar.getInstance().apply { timeInMillis = displayedMonth.timeInMillis }
+    val year = monthCalendar.get(Calendar.YEAR)
+    val month = monthCalendar.get(Calendar.MONTH)
+    val firstDayCalendar = Calendar.getInstance().apply {
+        clear()
+        set(year, month, 1, 12, 0, 0)
+    }
+    val firstOffset = (firstDayCalendar.get(Calendar.DAY_OF_WEEK) + 5) % 7 // Monday first.
+    val daysInMonth = monthCalendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val startKey = startAtMillis?.let(::projectDateKey)
+    val endKey = endAtMillis?.let(::projectDateKey)
+
+    GroupedCard(title = "Calendrier de l'événement", testTag = "project_event_calendar") {
+        Text(rangeLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = {
+                displayedMonth = Calendar.getInstance().apply {
+                    timeInMillis = displayedMonth.timeInMillis
+                    add(Calendar.MONTH, -1)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }
+            }) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Mois précédent")
+            }
+            Text(
+                monthFormatter.format(firstDayCalendar).replaceFirstChar { it.uppercase(Locale.FRANCE) },
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            IconButton(onClick = {
+                displayedMonth = Calendar.getInstance().apply {
+                    timeInMillis = displayedMonth.timeInMillis
+                    add(Calendar.MONTH, 1)
+                    set(Calendar.DAY_OF_MONTH, 1)
+                }
+            }) {
+                Icon(Icons.Default.ArrowForward, contentDescription = "Mois suivant")
+            }
+        }
+        Row(modifier = Modifier.fillMaxWidth()) {
+            listOf("Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim").forEach { day ->
+                Text(
+                    text = day,
+                    modifier = Modifier.weight(1f).padding(vertical = 3.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        repeat(6) { week ->
+            Row(modifier = Modifier.fillMaxWidth()) {
+                repeat(7) { weekday ->
+                    val dayNumber = week * 7 + weekday - firstOffset + 1
+                    val dateMillis = if (dayNumber in 1..daysInMonth) {
+                        Calendar.getInstance().apply {
+                            clear()
+                            set(year, month, dayNumber, 12, 0, 0)
+                        }.timeInMillis
+                    } else null
+                    val dateKey = dateMillis?.let(::projectDateKey)
+                    val inRange = dateKey != null && startKey != null && endKey != null && dateKey in startKey..endKey
+                    val isEndpoint = dateMillis != null && (
+                        (startAtMillis != null && sameProjectDate(dateMillis, startAtMillis)) ||
+                            (endAtMillis != null && sameProjectDate(dateMillis, endAtMillis))
+                        )
+                    val cellColor = when {
+                        isEndpoint -> MaterialTheme.colorScheme.primary
+                        inRange -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.82f)
+                        else -> Color.Transparent
+                    }
+                    val numberColor = when {
+                        isEndpoint -> MaterialTheme.colorScheme.onPrimary
+                        inRange -> MaterialTheme.colorScheme.onPrimaryContainer
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .padding(1.dp)
+                            .clip(CircleShape)
+                            .background(cellColor)
+                            .semantics {
+                                if (dateMillis != null) contentDescription = accessibleDateFormatter.format(Date(dateMillis))
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (dateMillis != null) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    dayNumber.toString(),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = numberColor,
+                                    fontWeight = if (isEndpoint) FontWeight.ExtraBold else FontWeight.Medium
+                                )
+                                if (inRange) {
+                                    Box(
+                                        Modifier.size(4.dp).clip(CircleShape)
+                                            .background(if (isEndpoint) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
+                                    )
+                                } else Spacer(Modifier.height(4.dp))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Text(
+            "Les jours compris entre le début et la fin sont mis en évidence.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun EventActionsCard(
+    projectId: Long,
+    actionItemsJson: String,
+    onActionsChanged: (String) -> Unit
+) {
+    var newActionTitle by remember(projectId) { mutableStateOf("") }
+    val actions = remember(actionItemsJson) { decodeProjectActionItems(actionItemsJson) }
+    GroupedCard(title = "Actions à mener", testTag = "project_action_items") {
+        Text(
+            if (actions.isEmpty()) "Ajoutez des tâches et cochez-les au fur et à mesure." else "${actions.count { !it.isDone }} action(s) restante(s) sur ${actions.size}",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        actions.forEach { action ->
+            Row(
+                modifier = Modifier.fillMaxWidth().testTag("project_action_${action.id}"),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.Checkbox(
+                    checked = action.isDone,
+                    onCheckedChange = { checked ->
+                        onActionsChanged(encodeProjectActionItems(actions.map {
+                            if (it.id == action.id) it.copy(isDone = checked) else it
+                        }))
+                    }
+                )
+                Text(
+                    action.title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (action.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                    textDecoration = if (action.isDone) TextDecoration.LineThrough else TextDecoration.None
+                )
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = newActionTitle,
+                onValueChange = { newActionTitle = it },
+                label = { Text("Ajouter une action") },
+                singleLine = true,
+                modifier = Modifier.weight(1f).testTag("new_project_action_field")
+            )
+            IconButton(
+                onClick = {
+                    val cleanTitle = newActionTitle.trim()
+                    if (cleanTitle.isNotEmpty()) {
+                        onActionsChanged(encodeProjectActionItems(actions + ProjectActionItem(title = cleanTitle)))
+                        newActionTitle = ""
+                    }
+                },
+                enabled = newActionTitle.isNotBlank(),
+                modifier = Modifier.testTag("add_project_action")
+            ) {
+                Icon(Icons.Default.Add, contentDescription = "Ajouter l'action", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+private fun projectDateKey(millis: Long): Int = Calendar.getInstance().apply { timeInMillis = millis }
+    .let { it.get(Calendar.YEAR) * 1000 + it.get(Calendar.DAY_OF_YEAR) }
+
+private fun sameProjectDate(firstMillis: Long, secondMillis: Long): Boolean =
+    projectDateKey(firstMillis) == projectDateKey(secondMillis)
+
+private fun ProjectSummary.toEntity(): ProjectEntity = ProjectEntity(
+    id = id,
+    uid = uid,
+    name = name,
+    description = description,
+    targetCents = targetCents,
+    isClosed = isClosed,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    kind = kind,
+    startAtMillis = startAtMillis,
+    endAtMillis = endAtMillis,
+    actionItemsJson = actionItemsJson
+)
+
 private fun projectKindLabel(kind: String): String = when (kind) {
     "CAMPAIGN" -> "Campagne"
     "EVENT" -> "Événement"
@@ -543,7 +774,7 @@ private fun ProjectDialog(
     title: String,
     initial: ProjectEntity?,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Long, Boolean, String) -> Unit
+    onConfirm: (String, String, Long, Boolean, String, Long?, Long?, String) -> Unit
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
     var description by remember { mutableStateOf(initial?.description ?: "") }
@@ -553,12 +784,19 @@ private fun ProjectDialog(
     var isClosed by remember { mutableStateOf(initial?.isClosed ?: false) }
     var kind by remember { mutableStateOf(initial?.kind ?: "PROJECT") }
     var kindMenuExpanded by remember { mutableStateOf(false) }
+    var startAtMillis by remember(initial?.id) { mutableStateOf(initial?.startAtMillis) }
+    var endAtMillis by remember(initial?.id) { mutableStateOf(initial?.endAtMillis) }
+    var showDateRangePicker by remember { mutableStateOf(false) }
+    var actionText by remember(initial?.id) {
+        mutableStateOf(decodeProjectActionItems(initial?.actionItemsJson ?: "[]").joinToString("\n") { it.title })
+    }
+    val projectDateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.FRANCE) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column {
+            Column(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -606,6 +844,49 @@ private fun ProjectDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (kind == "EVENT") {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("DATES DE L'ÉVÉNEMENT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 54.dp)
+                            .clip(RoundedCornerShape(13.dp))
+                            .clickable { showDateRangePicker = true }
+                            .testTag("project_date_range_button"),
+                        shape = RoundedCornerShape(13.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(9.dp))
+                            Text(
+                                text = if (startAtMillis != null && endAtMillis != null) {
+                                    "${projectDateFormat.format(Date(startAtMillis!!))}  –  ${projectDateFormat.format(Date(endAtMillis!!))}"
+                                } else "Choisir une date de début et de fin",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir une période")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = actionText,
+                        onValueChange = { actionText = it },
+                        label = { Text("Actions à mener (une par ligne)") },
+                        placeholder = { Text("Ex. Réserver la salle\nPréparer le programme") },
+                        minLines = 2,
+                        maxLines = 4,
+                        modifier = Modifier.fillMaxWidth().testTag("project_actions_field")
+                    )
+                }
                 if (initial != null) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -622,7 +903,25 @@ private fun ProjectDialog(
             TextButton(
                 onClick = {
                     if (name.isNotBlank()) {
-                        onConfirm(name, description, targetText.toLongOrNull() ?: 0L, isClosed, kind)
+                        val previousActions = decodeProjectActionItems(initial?.actionItemsJson ?: "[]")
+                        val actions = if (kind == "EVENT") {
+                            actionText.lines().mapNotNull { line ->
+                                val taskTitle = line.trim()
+                                if (taskTitle.isBlank()) null else previousActions.firstOrNull {
+                                    it.title.equals(taskTitle, ignoreCase = true)
+                                }?.copy(title = taskTitle) ?: ProjectActionItem(title = taskTitle)
+                            }
+                        } else emptyList()
+                        onConfirm(
+                            name,
+                            description,
+                            targetText.toLongOrNull() ?: 0L,
+                            isClosed,
+                            kind,
+                            if (kind == "EVENT") startAtMillis else null,
+                            if (kind == "EVENT") endAtMillis else null,
+                            encodeProjectActionItems(actions)
+                        )
                     }
                 },
                 enabled = name.isNotBlank()
@@ -632,4 +931,16 @@ private fun ProjectDialog(
             TextButton(onClick = onDismiss) { Text("Annuler") }
         }
     )
+    if (showDateRangePicker) {
+        LuminaDateRangePickerDialog(
+            initialStartLocalMillis = startAtMillis,
+            initialEndLocalMillis = endAtMillis,
+            onDismissRequest = { showDateRangePicker = false },
+            onRangeSelected = { start, end ->
+                startAtMillis = start
+                endAtMillis = end
+                showDateRangePicker = false
+            }
+        )
+    }
 }

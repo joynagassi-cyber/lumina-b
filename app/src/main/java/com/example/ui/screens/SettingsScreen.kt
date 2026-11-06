@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Church
@@ -732,73 +733,28 @@ fun SettingsScreen(
     }
 
     if (showFeatureGuide) {
-        val guideTopics = listOf(
-            "1. Se repérer dans Lumina" to "Le bouton ☰ ouvre le menu. Appuyez sur une rubrique pour changer de page. La flèche Retour de votre téléphone revient à l'écran précédent. Les réglages sont séparés par thèmes.",
-            "2. Lire le tableau de bord" to "Choisissez d'abord une période en haut de la page. Les totaux et graphiques se recalculent pour cette période. Touchez une caisse pour voir son solde, ou choisissez « Toutes » pour revenir au total.",
-            "3. Ajouter une écriture" to "Touchez le bouton +. Choisissez une entrée d'argent ou une dépense, puis indiquez le montant, la date, la catégorie et la caisse. Vérifiez le résumé avant d'enregistrer. Vous pouvez joindre une photo du reçu.",
-            "4. Gérer les caisses" to "Ouvrez « Caisses » pour créer une caisse, noter son solde de départ et consulter les mouvements. Un transfert entre deux caisses ne doit pas être saisi comme un revenu ou une dépense.",
-            "5. Préparer un budget" to "Dans « Budgets », choisissez un mois et une catégorie, puis saisissez le montant prévu. Le suivi compare ensuite les dépenses déjà enregistrées à ce montant.",
-            "6. Retrouver une opération" to "Dans l'historique, utilisez les filtres de date, catégorie, caisse ou type. Appuyez sur « Effacer les filtres » pour retrouver la liste entière. Les corrections et annulations restent traçables.",
-            "7. Gérer les membres" to "Ouvrez « Membres », appuyez sur Ajouter et remplissez le prénom et le nom. Les coordonnées et autres renseignements sont facultatifs. Vérifiez la fiche avant de la valider.",
-            "8. Suivre un projet" to "Créez un projet, une collecte ou un événement avec son objectif. Lors de la saisie d'une opération liée, choisissez ce projet pour que son avancement soit correctement calculé.",
-            "9. Créer les accès de l'équipe" to "Chaque personne doit avoir son propre nom et son code PIN de 4 à 6 chiffres sur son appareil. Ne partagez pas votre PIN. Les comptes locaux et les PIN ne sont jamais inclus dans un fichier Lumina partagé.",
-            "10. Créer et partager un fichier Lumina" to "Dans Paramètres → Fichier Lumina, créez le ZIP complet. Il contient le profil de l'église, le logo, les réglages, les écritures, budgets, caisses, projets, membres et justificatifs disponibles. Un mot de passe est facultatif, mais recommandé pour l'envoi.",
-            "11. Rejoindre avec un fichier" to "Sur l'appareil neuf, choisissez « J'ai un fichier Lumina ». Sélectionnez le ZIP et saisissez son mot de passe si demandé. L'import est refusé si le dossier contient déjà des données. Ensuite, créez votre propre prénom, nom et PIN.",
-            "12. Essayer sans risque" to "Le mode démonstration contient des exemples temporaires en lecture seule. Il ne modifie pas le vrai dossier. Quittez la démonstration pour revenir à l'église."
-        )
-        val safeStep = guideStep.coerceIn(0, guideTopics.lastIndex)
-        val (topicTitle, topicBody) = guideTopics[safeStep]
-        AlertDialog(
+        androidx.compose.ui.window.Dialog(
             onDismissRequest = { showFeatureGuide = false },
-            title = { Text("Guide de Lumina") },
-            text = {
-                Column(
-                    modifier = Modifier.heightIn(max = 440.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Text(
-                        "Étape ${safeStep + 1} sur ${guideTopics.size}",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        repeat(guideTopics.size) { index ->
-                            Box(
-                                Modifier.weight(1f).height(4.dp).clip(LuminaTokens.ShapePill)
-                                    .background(if (index <= safeStep) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                            )
-                        }
-                    }
-                    Text(topicTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                    Text(
-                        topicBody,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 24.sp
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TextButton(enabled = safeStep > 0, onClick = { guideStep = (safeStep - 1).coerceAtLeast(0) }) {
-                            Text("Précédent")
-                        }
-                        TextButton(
-                            onClick = {
-                                if (safeStep < guideTopics.lastIndex) guideStep = safeStep + 1
-                                else showFeatureGuide = false
-                            }
-                        ) { Text(if (safeStep == guideTopics.lastIndex) "Terminer" else "Suivant") }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { showFeatureGuide = false }) { Text("Fermer le guide") }
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(0.dp),
+                color = MaterialTheme.colorScheme.background
+            ) {
+                com.example.ui.components.LuminaFeatureTour(
+                    page = guideStep,
+                    onPrevious = { guideStep = (guideStep - 1).coerceAtLeast(0) },
+                    onNext = {
+                        if (guideStep < com.example.ui.components.LuminaFeatureChapters.lastIndex) guideStep++
+                        else showFeatureGuide = false
+                    },
+                    onSkip = { showFeatureGuide = false },
+                    finalActionLabel = "Terminer",
+                    closeLabel = "Fermer"
+                )
             }
-        )
+        }
     }
 
     if (showCloudRestoreConfirm) {

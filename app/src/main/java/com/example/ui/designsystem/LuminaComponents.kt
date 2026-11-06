@@ -553,6 +553,20 @@ fun PillButton(
     isPrimary: Boolean = true,
     testTag: String? = null
 ) {
+    val isGlassTheme = MaterialTheme.colorScheme.background.alpha == 0f
+    val glassRim = if (isGlassTheme) {
+        Modifier.border(
+            width = 1.dp,
+            brush = Brush.linearGradient(
+                listOf(
+                    Color.White.copy(alpha = 0.72f),
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.42f),
+                    Color.White.copy(alpha = 0.20f)
+                )
+            ),
+            shape = LuminaTokens.ShapePill
+        )
+    } else Modifier
     if (isPrimary) {
         Button(
             onClick = onClick,
@@ -562,6 +576,7 @@ fun PillButton(
                 contentColor = MaterialTheme.colorScheme.onPrimary
             ),
             modifier = modifier
+                .then(glassRim)
                 .height(48.dp)
                 .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
         ) {
@@ -576,6 +591,7 @@ fun PillButton(
             onClick = onClick,
             shape = LuminaTokens.ShapePill,
             modifier = modifier
+                .then(glassRim)
                 .height(48.dp)
                 .then(if (testTag != null) Modifier.testTag(testTag) else Modifier)
         ) {

@@ -36,7 +36,15 @@ class SyncBundleTest {
     @Test
     fun echange_transporte_budgets_projets_et_relations_stables() {
         val register = CashRegisterEntity(id = 5, name = "Caisse principale", uid = "register-uid")
-        val project = ProjectEntity(id = 7, name = "Toiture", uid = "project-uid")
+        val project = ProjectEntity(
+            id = 7,
+            name = "Événement jeunesse",
+            uid = "project-uid",
+            kind = "EVENT",
+            startAtMillis = 1_790_000_000_000L,
+            endAtMillis = 1_790_172_800_000L,
+            actionItemsJson = "[{\"id\":\"task-1\",\"title\":\"Réserver la salle\",\"isDone\":false}]"
+        )
         val transaction = TransactionEntity(
             id = 11,
             title = "Don affecté",
@@ -61,6 +69,9 @@ class SyncBundleTest {
 
         assertEquals(500_000L, decoded.budgets.single().amountCents)
         assertEquals("project-uid", decoded.projects.single().uid)
+        assertEquals(1_790_000_000_000L, decoded.projects.single().startAtMillis)
+        assertEquals(1_790_172_800_000L, decoded.projects.single().endAtMillis)
+        assertEquals("[{\"id\":\"task-1\",\"title\":\"Réserver la salle\",\"isDone\":false}]", decoded.projects.single().actionItemsJson)
         assertEquals("project-uid", decoded.projectUidByTransactionUid["transaction-uid"])
         assertEquals("register-uid", decoded.registerUidByTransactionUid["transaction-uid"])
         assertEquals(listOf<Byte>(1, 2, 3, 4), decoded.receiptFilesByTransactionUid.getValue("transaction-uid").toList())

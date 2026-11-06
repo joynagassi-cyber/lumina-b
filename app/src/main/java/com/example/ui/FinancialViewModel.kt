@@ -12,6 +12,8 @@ import com.example.data.ChurchProfileEntity
 import com.example.data.MemberEntity
 import com.example.data.TransactionEntity
 import com.example.data.ProjectEntity
+import com.example.data.decodeProjectActionItems
+import com.example.data.encodeProjectActionItems
 import com.example.data.TransactionRepository
 import com.example.data.SyncContributorEntity
 import com.example.data.TransactionType
@@ -128,7 +130,12 @@ data class ProjectSummary(
     val collectedCents: Long,
     val spentCents: Long,
     val isClosed: Boolean,
-    val kind: String = "PROJECT"
+    val kind: String = "PROJECT",
+    val createdAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = System.currentTimeMillis(),
+    val startAtMillis: Long? = null,
+    val endAtMillis: Long? = null,
+    val actionItemsJson: String = "[]"
 ) {
     val balanceCents: Long get() = collectedCents - spentCents
     val progress: Float
@@ -575,6 +582,11 @@ class FinancialViewModel(
                 description = project.description,
                 targetCents = project.targetCents,
                 kind = project.kind,
+                createdAt = project.createdAt,
+                updatedAt = project.updatedAt,
+                startAtMillis = project.startAtMillis,
+                endAtMillis = project.endAtMillis,
+                actionItemsJson = project.actionItemsJson,
                 collectedCents = projectTx
                     .filter { it.type == TransactionType.INCOME }
                     .sumOf { it.amountCents },
@@ -1628,12 +1640,24 @@ class FinancialViewModel(
     // ==========================================
     // Projets et fonds affectés
     // ==========================================
-    fun addProject(name: String, description: String, targetCents: Long, kind: String = "PROJECT") {
+    fun addProject(
+        name: String,
+        description: String,
+        targetCents: Long,
+        kind: String = "PROJECT",
+        startAtMillis: Long? = null,
+        endAtMillis: Long? = null,
+        actionItemsJson: String = "[]"
+    ) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
             val cleanName = name.trim()
             if (cleanName.isBlank()) {
                 _eventFlow.emit("Le nom du projet est obligatoire")
+                return@launch
+            }
+            if (kind == "EVENT" && startAtMillis != null && endAtMillis != null && endAtMillis < startAtMillis) {
+                _eventFlow.emit("La date de fin doit être après la date de début")
                 return@launch
             }
             if (uiState.value.projects.any { it.name.equals(cleanName, ignoreCase = true) }) {
@@ -1645,19 +1669,36 @@ class FinancialViewModel(
                     name = cleanName,
                     description = description.trim(),
                     targetCents = targetCents.coerceAtLeast(0L),
-                    kind = kind.takeIf { it in setOf("PROJECT", "CAMPAIGN", "EVENT", "DONATION") } ?: "PROJECT"
+                    kind = kind.takeIf { it in setOf("PROJECT", "CAMPAIGN", "EVENT", "DONATION") } ?: "PROJECT",
+                    startAtMillis = startAtMillis,
+                    endAtMillis = endAtMillis,
+                    actionItemsJson = runCatching { encodeProjectActionItems(decodeProjectActionItems(actionItemsJson)) }.getOrDefault("[]")
                 )
             )
             _eventFlow.emit("Projet \"$cleanName\" créé")
         }
     }
 
-    fun updateProject(project: ProjectEntity, name: String, description: String, targetCents: Long, isClosed: Boolean, kind: String = project.kind) {
+    fun updateProject(
+        project: ProjectEntity,
+        name: String,
+        description: String,
+        targetCents: Long,
+        isClosed: Boolean,
+        kind: String = project.kind,
+        startAtMillis: Long? = project.startAtMillis,
+        endAtMillis: Long? = project.endAtMillis,
+        actionItemsJson: String = project.actionItemsJson
+    ) {
         viewModelScope.launch {
             if (!ensurePermission()) return@launch
             val cleanName = name.trim()
             if (cleanName.isBlank()) {
                 _eventFlow.emit("Le nom du projet est obligatoire")
+                return@launch
+            }
+            if (kind == "EVENT" && startAtMillis != null && endAtMillis != null && endAtMillis < startAtMillis) {
+                _eventFlow.emit("La date de fin doit être après la date de début")
                 return@launch
             }
             if (uiState.value.projects.any { it.id != project.id && it.name.equals(cleanName, ignoreCase = true) }) {
@@ -1671,10 +1712,21 @@ class FinancialViewModel(
                     targetCents = targetCents.coerceAtLeast(0L),
                     isClosed = isClosed,
                     kind = kind.takeIf { it in setOf("PROJECT", "CAMPAIGN", "EVENT", "DONATION") } ?: "PROJECT",
+                    startAtMillis = startAtMillis,
+                    endAtMillis = endAtMillis,
+                    actionItemsJson = runCatching { encodeProjectActionItems(decodeProjectActionItems(actionItemsJson)) }.getOrDefault("[]"),
                     updatedAt = System.currentTimeMillis()
                 )
             )
             _eventFlow.emit("Projet \"$cleanName\" mis à jour")
+        }
+    }
+
+    fun updateProjectActions(project: ProjectEntity, actionItemsJson: String) {
+        viewModelScope.launch {
+            if (!ensurePermission()) return@launch
+            val safeItems = runCatching { encodeProjectActionItems(decodeProjectActionItems(actionItemsJson)) }.getOrDefault("[]")
+            repository.updateProject(project.copy(actionItemsJson = safeItems, updatedAt = System.currentTimeMillis()))
         }
     }
 
