@@ -230,10 +230,10 @@ fun ProjectsScreen(
             }
             projects.forEach { project ->
                 Card(
+                    onClick = { selectedProject = project },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
-                        .clickable { selectedProject = project }
                         .testTag("project_card_${project.id}"),
                     shape = LuminaTokens.ShapeCard,
                     colors = CardDefaults.cardColors(

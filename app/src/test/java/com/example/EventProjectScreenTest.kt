@@ -57,6 +57,7 @@ class EventProjectScreenTest {
         }
 
         composeRule.onNodeWithTag("project_card_42").performScrollTo().performClick()
+        composeRule.waitForIdle()
         composeRule.onNodeWithTag("project_detail_42").assertIsDisplayed()
         composeRule.onNodeWithTag("event_management_card").assertIsDisplayed()
         composeRule.onNodeWithTag("project_event_calendar").assertIsDisplayed()
