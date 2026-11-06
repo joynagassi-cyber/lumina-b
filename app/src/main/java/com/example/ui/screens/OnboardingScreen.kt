@@ -480,7 +480,7 @@ private fun WelcomeStep(accentColor: Color) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.testTag("lumina_slogan")
         )
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         WelcomePoint(Icons.Default.Payments, "Trésorerie par caisse", "Chaque franc est rattaché à une caisse, avec virements traçables.")
         WelcomePoint(Icons.Default.PieChart, "Budgets maîtrisés", "Plafonds par poste et alertes avant dépassement.")
         WelcomePoint(Icons.Default.VerifiedUser, "Bilans présentables", "Rapports structurés avec l'identité et le logo de votre église.")
