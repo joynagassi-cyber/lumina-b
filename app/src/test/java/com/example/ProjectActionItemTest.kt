@@ -4,6 +4,7 @@ import com.example.data.ProjectActionItem
 import com.example.data.ProjectEntity
 import com.example.data.decodeProjectActionItems
 import com.example.data.encodeProjectActionItems
+import com.example.data.moveProjectActionItem
 import com.example.export.BackupCodec
 import com.example.export.BackupSnapshot
 import com.example.sync.SyncBundle
@@ -62,6 +63,19 @@ class ProjectActionItemTest {
         assertEquals(nestedTasks, backupRoundTrip.projects.single().actionItemsJson)
         assertEquals(nestedTasks, exchangeRoundTrip.projects.single().actionItemsJson)
         assertEquals("Installer", decodeProjectActionItems(exchangeRoundTrip.projects.single().actionItemsJson).single().subTasks.single().title)
+    }
+
+    @Test
+    fun reordering_tasks_and_subtasks_persists_their_nested_data() {
+        val first = ProjectActionItem(id = "first", title = "Préparer", subTasks = listOf(ProjectActionItem(id = "child", title = "Installer")))
+        val second = ProjectActionItem(id = "second", title = "Ranger")
+        val moved = moveProjectActionItem(listOf(first, second), fromIndex = 0, direction = 1)
+        val movedChildren = moveProjectActionItem(first.subTasks + ProjectActionItem(id = "child-2", title = "Nettoyer"), fromIndex = 0, direction = 1)
+
+        assertEquals(listOf(second, first), moved)
+        assertEquals(listOf("Nettoyer", "Installer"), movedChildren.map { it.title })
+        assertEquals(first.subTasks, moved.last().subTasks)
+        assertEquals(moved, decodeProjectActionItems(encodeProjectActionItems(moved)))
     }
 
     @Test

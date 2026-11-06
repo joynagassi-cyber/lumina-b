@@ -2,6 +2,9 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -27,6 +30,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material3.AlertDialog
@@ -48,10 +52,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -66,6 +72,7 @@ import com.example.data.ProjectEntity
 import com.example.data.ProjectActionItem
 import com.example.data.decodeProjectActionItems
 import com.example.data.encodeProjectActionItems
+import com.example.data.moveProjectActionItem
 import com.example.ui.components.LuminaDateRangePickerPanel
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
@@ -415,33 +422,11 @@ private fun ProjectDetailPanel(
             }
         }
 
-        ProjectIdentityCard(project)
-        Spacer(Modifier.height(12.dp))
         if (project.kind == "EVENT") {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                if (maxWidth >= 620.dp) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                        ProjectFinanceCard(project, event = true, modifier = Modifier.weight(0.92f))
-                        ProjectEventCalendar(
-                            startAtMillis = project.startAtMillis,
-                            endAtMillis = project.endAtMillis,
-                            modifier = Modifier.weight(1.08f)
-                        )
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ProjectFinanceCard(project, event = true)
-                        ProjectEventCalendar(project.startAtMillis, project.endAtMillis)
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-            EventActionsCard(
-                projectId = project.id,
-                actionItemsJson = project.actionItemsJson,
-                onActionsChanged = onUpdateActions
-            )
+            ProjectEventWorkspaceCard(project = project, onActionsChanged = onUpdateActions)
         } else {
+            ProjectIdentityCard(project)
+            Spacer(Modifier.height(12.dp))
             ProjectFinanceCard(project, event = false)
         }
 
@@ -497,18 +482,73 @@ private fun ProjectIdentityCard(project: ProjectSummary) {
         shape = LuminaTokens.ShapeHero,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
     ) {
-        Column(Modifier.padding(18.dp)) {
-            Text(
-                if (project.isClosed) "DOSSIER CLÔTURÉ" else projectKindLabel(project.kind).uppercase(Locale.FRANCE),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(5.dp))
-            Text(project.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-            if (project.description.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Text(project.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ProjectIdentityContent(project, modifier = Modifier.padding(18.dp))
+    }
+}
+
+@Composable
+private fun ProjectEventWorkspaceCard(
+    project: ProjectSummary,
+    onActionsChanged: (String) -> Unit
+) {
+    GroupedCard(title = "Fiche complète de l'événement", testTag = "event_management_card") {
+        ProjectIdentityContent(project, modifier = Modifier.padding(horizontal = 2.dp))
+        Spacer(Modifier.height(12.dp))
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            if (maxWidth >= 620.dp) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                    ProjectFinanceCard(project, event = true, modifier = Modifier.weight(0.92f))
+                    ProjectEventCalendar(
+                        startAtMillis = project.startAtMillis,
+                        endAtMillis = project.endAtMillis,
+                        modifier = Modifier.weight(1.08f)
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ProjectFinanceCard(project, event = true)
+                    ProjectEventCalendar(project.startAtMillis, project.endAtMillis)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        EventActionsCard(
+            projectId = project.id,
+            actionItemsJson = project.actionItemsJson,
+            onActionsChanged = onActionsChanged
+        )
+    }
+}
+
+@Composable
+private fun ProjectIdentityContent(project: ProjectSummary, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth()) {
+        Text(
+            if (project.isClosed) "DOSSIER CLÔTURÉ" else projectKindLabel(project.kind).uppercase(Locale.FRANCE),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(5.dp))
+        Text(project.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+        if (project.description.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(project.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (project.kind == "EVENT") {
+            val dateFormat = remember { SimpleDateFormat("d MMM yyyy", Locale.FRANCE) }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (project.startAtMillis != null && project.endAtMillis != null) {
+                        "${dateFormat.format(Date(project.startAtMillis))}  –  ${dateFormat.format(Date(project.endAtMillis))}"
+                    } else "Période à définir · Modifier pour choisir les dates",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -718,9 +758,9 @@ private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?, modif
                                     color = numberColor,
                                     fontWeight = if (isEndpoint) FontWeight.ExtraBold else FontWeight.Medium
                                 )
-                                if (inRange) {
+                                        if (inRange) {
                                     Box(
-                                        Modifier.size(4.dp).clip(CircleShape)
+                                        Modifier.size(6.dp).clip(CircleShape)
                                             .background(if (isEndpoint) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary)
                                     )
                                 } else Spacer(Modifier.height(4.dp))
@@ -730,11 +770,15 @@ private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?, modif
                 }
             }
         }
-        Text(
-            "Les jours compris entre le début et la fin sont mis en évidence.",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+            Spacer(Modifier.width(7.dp))
+            Text(
+                "Un point marque chaque jour inclus; les pastilles pleines indiquent le début et la fin.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -747,18 +791,37 @@ private fun EventActionsCard(
     var newActionTitle by remember(projectId) { mutableStateOf("") }
     var newSubtaskTitle by remember(projectId) { mutableStateOf("") }
     var subtaskParentId by remember(projectId) { mutableStateOf<String?>(null) }
-    val actions = remember(actionItemsJson) { decodeProjectActionItems(actionItemsJson) }
+    var actions by remember(actionItemsJson) { mutableStateOf(decodeProjectActionItems(actionItemsJson)) }
     val allItems = actions.flatMap { listOf(it) + it.subTasks }
     val pendingCount = allItems.count { !it.isDone }
+    val completedCount = allItems.size - pendingCount
+
+    fun saveActions(updated: List<ProjectActionItem>) {
+        actions = updated
+        onActionsChanged(encodeProjectActionItems(updated))
+    }
 
     GroupedCard(title = "Tâches et sous-tâches", testTag = "project_action_items") {
         Text(
-            if (actions.isEmpty()) "Ajoutez des tâches et cochez-les au fur et à mesure. Chaque tâche peut contenir des sous-tâches."
-            else "$pendingCount tâche(s) restante(s) sur ${allItems.size}",
+            if (actions.isEmpty()) "Ajoutez les tâches de préparation, puis cochez-les au fur et à mesure."
+            else "$completedCount terminée(s) · $pendingCount restante(s) · ${allItems.size} au total",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-        actions.forEach { action ->
+        if (allItems.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = { if (allItems.isEmpty()) 0f else completedCount.toFloat() / allItems.size.toFloat() },
+                modifier = Modifier.fillMaxWidth().height(6.dp).clip(LuminaTokens.ShapePill)
+            )
+            Text(
+                "Maintenez la poignée ⋮⋮ et faites glisser une tâche ou sous-tâche pour changer son ordre.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 5.dp, bottom = 4.dp)
+            )
+        }
+        actions.forEachIndexed { actionIndex, action ->
             Row(
                 modifier = Modifier.fillMaxWidth().testTag("project_action_${action.id}"),
                 verticalAlignment = Alignment.CenterVertically
@@ -766,30 +829,49 @@ private fun EventActionsCard(
                 androidx.compose.material3.Checkbox(
                     checked = action.isDone,
                     onCheckedChange = { checked ->
-                        onActionsChanged(encodeProjectActionItems(updateProjectActionItems(actions, action.id) { it.copy(isDone = checked) }))
+                        saveActions(updateProjectActionItems(actions, action.id) { it.copy(isDone = checked) })
                     }
                 )
                 Text(
                     action.title,
                     modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = if (action.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (action.isDone) TextDecoration.LineThrough else TextDecoration.None
+                )
+                DragReorderHandle(
+                    itemKey = action.id,
+                    canMoveUp = actionIndex > 0,
+                    canMoveDown = actionIndex < actions.lastIndex,
+                    onMoveUp = { saveActions(moveProjectActionItem(actions, actionIndex, -1)) },
+                    onMoveDown = { saveActions(moveProjectActionItem(actions, actionIndex, 1)) }
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 52.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "${action.subTasks.size} sous-tâche(s)",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 TextButton(onClick = {
                     subtaskParentId = if (subtaskParentId == action.id) null else action.id
                     newSubtaskTitle = ""
-                }) { Text("+ sous-tâche") }
+                }) { Text(if (subtaskParentId == action.id) "Annuler" else "+ sous-tâche") }
             }
-            action.subTasks.forEach { subtask ->
+            action.subTasks.forEachIndexed { subtaskIndex, subtask ->
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(start = 26.dp).testTag("project_subtask_${subtask.id}"),
+                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp).testTag("project_subtask_${subtask.id}"),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     androidx.compose.material3.Checkbox(
                         checked = subtask.isDone,
                         onCheckedChange = { checked ->
-                            onActionsChanged(encodeProjectActionItems(updateProjectActionItems(actions, subtask.id) { it.copy(isDone = checked) }))
+                            saveActions(updateProjectActionItems(actions, subtask.id) { it.copy(isDone = checked) })
                         }
                     )
                     Text(
@@ -799,10 +881,23 @@ private fun EventActionsCard(
                         color = if (subtask.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                         textDecoration = if (subtask.isDone) TextDecoration.LineThrough else TextDecoration.None
                     )
+                    DragReorderHandle(
+                        itemKey = subtask.id,
+                        canMoveUp = subtaskIndex > 0,
+                        canMoveDown = subtaskIndex < action.subTasks.lastIndex,
+                        onMoveUp = {
+                            val moved = moveProjectActionItem(action.subTasks, subtaskIndex, -1)
+                            saveActions(actions.map { if (it.id == action.id) it.copy(subTasks = moved) else it })
+                        },
+                        onMoveDown = {
+                            val moved = moveProjectActionItem(action.subTasks, subtaskIndex, 1)
+                            saveActions(actions.map { if (it.id == action.id) it.copy(subTasks = moved) else it })
+                        }
+                    )
                 }
             }
             if (subtaskParentId == action.id) {
-                Row(modifier = Modifier.fillMaxWidth().padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(modifier = Modifier.fillMaxWidth().padding(start = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = newSubtaskTitle,
                         onValueChange = { newSubtaskTitle = it },
@@ -814,10 +909,9 @@ private fun EventActionsCard(
                         onClick = {
                             val cleanTitle = newSubtaskTitle.trim()
                             if (cleanTitle.isNotEmpty()) {
-                                val updated = actions.map { item ->
+                                saveActions(actions.map { item ->
                                     if (item.id == action.id) item.copy(subTasks = item.subTasks + ProjectActionItem(title = cleanTitle)) else item
-                                }
-                                onActionsChanged(encodeProjectActionItems(updated))
+                                })
                                 newSubtaskTitle = ""
                                 subtaskParentId = null
                             }
@@ -842,7 +936,7 @@ private fun EventActionsCard(
                 onClick = {
                     val cleanTitle = newActionTitle.trim()
                     if (cleanTitle.isNotEmpty()) {
-                        onActionsChanged(encodeProjectActionItems(actions + ProjectActionItem(title = cleanTitle)))
+                        saveActions(actions + ProjectActionItem(title = cleanTitle))
                         newActionTitle = ""
                     }
                 },
@@ -853,6 +947,44 @@ private fun EventActionsCard(
             }
         }
     }
+}
+
+@Composable
+private fun DragReorderHandle(
+    itemKey: String,
+    canMoveUp: Boolean,
+    canMoveDown: Boolean,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit
+) {
+    var accumulatedDrag by remember(itemKey) { mutableStateOf(0f) }
+    val thresholdPx = with(LocalDensity.current) { 38.dp.toPx() }
+    val canMoveUpState by rememberUpdatedState(canMoveUp)
+    val canMoveDownState by rememberUpdatedState(canMoveDown)
+    val moveUpState by rememberUpdatedState(onMoveUp)
+    val moveDownState by rememberUpdatedState(onMoveDown)
+    val dragState = rememberDraggableState { delta ->
+        accumulatedDrag += delta
+        if (accumulatedDrag <= -thresholdPx && canMoveUpState) {
+            moveUpState()
+            accumulatedDrag += thresholdPx
+        } else if (accumulatedDrag >= thresholdPx && canMoveDownState) {
+            moveDownState()
+            accumulatedDrag -= thresholdPx
+        }
+    }
+    Icon(
+        imageVector = Icons.Default.DragHandle,
+        contentDescription = if (canMoveUp || canMoveDown) "Maintenir et glisser pour réorganiser" else "Ordre fixe",
+        tint = if (canMoveUp || canMoveDown) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.outlineVariant,
+        modifier = Modifier.size(40.dp).draggable(
+            state = dragState,
+            orientation = Orientation.Vertical,
+            enabled = canMoveUp || canMoveDown,
+            onDragStarted = { accumulatedDrag = 0f },
+            onDragStopped = { accumulatedDrag = 0f }
+        )
+    )
 }
 
 private fun updateProjectActionItems(

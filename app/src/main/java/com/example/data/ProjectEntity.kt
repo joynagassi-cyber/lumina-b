@@ -70,6 +70,20 @@ fun decodeProjectActionItems(json: String): List<ProjectActionItem> = runCatchin
     parse(org.json.JSONArray(json))
 }.getOrDefault(emptyList())
 
+/** Move one checklist entry by one position while preserving its full nested subtree. */
+fun moveProjectActionItem(items: List<ProjectActionItem>, fromIndex: Int, direction: Int): List<ProjectActionItem> {
+    if (fromIndex !in items.indices || direction == 0 || items.size < 2) return items
+    val toIndex = (fromIndex + direction.sign).coerceIn(items.indices)
+    if (toIndex == fromIndex) return items
+    return items.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+}
+
+private val Int.sign: Int get() = when {
+    this > 0 -> 1
+    this < 0 -> -1
+    else -> 0
+}
+
 fun encodeProjectActionItems(items: List<ProjectActionItem>): String {
     fun serialize(entries: List<ProjectActionItem>): org.json.JSONArray = org.json.JSONArray().apply {
         entries.filter { it.title.isNotBlank() }.forEach { item ->
