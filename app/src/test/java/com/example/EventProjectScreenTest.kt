@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.example.ui.ProjectSummary
 import com.example.ui.screens.ProjectsScreen
 import org.junit.Rule
@@ -55,7 +56,7 @@ class EventProjectScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag("project_card_42").performClick()
+        composeRule.onNodeWithTag("project_card_42").performScrollTo().performClick()
         composeRule.onNodeWithTag("project_detail_42").assertIsDisplayed()
         composeRule.onNodeWithTag("event_management_card").assertIsDisplayed()
         composeRule.onNodeWithTag("project_event_calendar").assertIsDisplayed()
