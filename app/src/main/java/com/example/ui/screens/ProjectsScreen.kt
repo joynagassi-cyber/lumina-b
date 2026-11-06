@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -64,7 +65,7 @@ import com.example.data.ProjectEntity
 import com.example.data.ProjectActionItem
 import com.example.data.decodeProjectActionItems
 import com.example.data.encodeProjectActionItems
-import com.example.ui.components.LuminaDateRangePickerDialog
+import com.example.ui.components.LuminaDateRangePickerPanel
 import com.example.data.TransactionEntity
 import com.example.data.TransactionType
 import com.example.ui.ProjectSummary
@@ -193,7 +194,7 @@ fun ProjectsScreen(
         } else {
             val targetProjects = projects.filter { it.targetCents > 0L }.sortedByDescending { it.progress }.take(5)
             if (targetProjects.isNotEmpty()) {
-                GroupedCard(title = "Avancement des objectifs", testTag = "project_progress_chart") {
+                GroupedCard(title = "Progression des projets et budgets", testTag = "project_progress_chart") {
                     targetProjects.forEachIndexed { index, project ->
                         Column(Modifier.fillMaxWidth().padding(vertical = 7.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -208,7 +209,8 @@ fun ProjectsScreen(
                                 trackColor = MaterialTheme.colorScheme.surfaceVariant
                             )
                             Text(
-                                "Collecté ${CurrencyFormatter.format(project.collectedCents)} sur ${CurrencyFormatter.format(project.targetCents)}",
+                                if (project.kind == "EVENT") "Dépensé ${CurrencyFormatter.format(project.spentCents)} sur le budget ${CurrencyFormatter.format(project.targetCents)}"
+                                else "Collecté ${CurrencyFormatter.format(project.collectedCents)} sur ${CurrencyFormatter.format(project.targetCents)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -295,7 +297,7 @@ fun ProjectsScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            AmountBlock("Collecté", project.collectedCents, IncomeGreen)
+                            AmountBlock(if (project.kind == "EVENT") "Entrées" else "Collecté", project.collectedCents, IncomeGreen)
                             AmountBlock("Dépensé", project.spentCents, ExpenseRed)
                             AmountBlock("Disponible", project.balanceCents, MaterialTheme.colorScheme.onSurface)
                         }
@@ -313,8 +315,11 @@ fun ProjectsScreen(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "Objectif : ${CurrencyFormatter.format(project.targetCents)} " +
-                                    "(${(project.progress * 100).toInt()} %)",
+                                text = if (project.kind == "EVENT") {
+                                    "Budget : ${CurrencyFormatter.format(project.targetCents)} (${(project.progress * 100).toInt()} % dépensé)"
+                                } else {
+                                    "Objectif : ${CurrencyFormatter.format(project.targetCents)} (${(project.progress * 100).toInt()} %)"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -409,67 +414,40 @@ private fun ProjectDetailPanel(
             }
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = LuminaTokens.ShapeHero,
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-        ) {
-            Column(Modifier.padding(20.dp)) {
-                Text(
-                    if (project.isClosed) "DOSSIER CLÔTURÉ" else projectKindLabel(project.kind).uppercase(Locale.FRANCE),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(project.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
-                if (project.description.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(project.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(18.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    AmountBlock("Dons collectés", project.collectedCents, IncomeGreen)
-                    AmountBlock("Dépenses", project.spentCents, ExpenseRed)
-                }
-                Spacer(Modifier.height(12.dp))
-                Text("Disponible : ${CurrencyFormatter.format(project.balanceCents)}", fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.titleMedium)
-                if (project.targetCents > 0L) {
-                    Spacer(Modifier.height(12.dp))
-                    LinearProgressIndicator(
-                        progress = { project.progress },
-                        modifier = Modifier.fillMaxWidth().height(9.dp).clip(LuminaTokens.ShapePill),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f)
-                    )
-                    Spacer(Modifier.height(5.dp))
-                    Text(
-                        "Objectif ${CurrencyFormatter.format(project.targetCents)} · ${(project.progress * 100).toInt()} % atteint",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+        ProjectIdentityCard(project)
+        Spacer(Modifier.height(12.dp))
+        if (project.kind == "EVENT") {
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth >= 620.dp) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                        ProjectFinanceCard(project, event = true, modifier = Modifier.weight(0.92f))
+                        ProjectEventCalendar(
+                            startAtMillis = project.startAtMillis,
+                            endAtMillis = project.endAtMillis,
+                            modifier = Modifier.weight(1.08f)
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ProjectFinanceCard(project, event = true)
+                        ProjectEventCalendar(project.startAtMillis, project.endAtMillis)
+                    }
                 }
             }
-        }
-
-        if (project.kind == "EVENT") {
-            Spacer(Modifier.height(16.dp))
-            ProjectEventCalendar(
-                startAtMillis = project.startAtMillis,
-                endAtMillis = project.endAtMillis
-            )
             Spacer(Modifier.height(12.dp))
             EventActionsCard(
                 projectId = project.id,
                 actionItemsJson = project.actionItemsJson,
                 onActionsChanged = onUpdateActions
             )
+        } else {
+            ProjectFinanceCard(project, event = false)
         }
 
         Spacer(Modifier.height(20.dp))
-        Text("Mouvements rattachés", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("Historique des mouvements affectés", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(
-            "${transactions.size} écriture(s) · dons et dépenses affectés à ce dossier",
+            "${transactions.size} mouvement(s) · entrées et sorties rattachées à ce dossier",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -482,41 +460,29 @@ private fun ProjectDetailPanel(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
             ) {
                 Text(
-                    "Aucune écriture rattachée pour le moment. Lors d'une nouvelle saisie, choisissez ce projet dans le champ d'affectation.",
+                    "Aucune entrée ni sortie n'est encore affectée à ce dossier. À la saisie d'une opération, sélectionnez cet événement dans « Projet / fonds affecté ».",
                     modifier = Modifier.padding(18.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         } else {
-            transactions.forEachIndexed { index, tx ->
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier.size(38.dp).clip(CircleShape)
-                            .background(if (tx.type == TransactionType.INCOME) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(if (tx.type == TransactionType.INCOME) "+" else "−", fontWeight = FontWeight.Black)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(tx.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                        Text(
-                            "${tx.category} · ${dateFormat.format(Date(tx.timestamp))}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        CurrencyFormatter.format(tx.amountCents, withSign = true, isPositive = tx.type == TransactionType.INCOME),
-                        fontWeight = FontWeight.Bold,
-                        color = if (tx.type == TransactionType.INCOME) IncomeGreen else ExpenseRed
-                    )
+            val incomes = transactions.filter { it.type == TransactionType.INCOME }.sortedBy { it.timestamp }
+            val expenses = transactions.filter { it.type == TransactionType.EXPENSE }.sortedBy { it.timestamp }
+            if (incomes.isNotEmpty()) {
+                Text("ENTRÉES AFFECTÉES", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = IncomeGreen)
+                incomes.forEachIndexed { index, tx ->
+                    ProjectMovementRow(tx, dateFormat)
+                    if (index < incomes.lastIndex) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
-                if (index < transactions.lastIndex) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
+            if (expenses.isNotEmpty()) {
+                if (incomes.isNotEmpty()) Spacer(Modifier.height(12.dp))
+                Text("SORTIES AFFECTÉES", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = ExpenseRed)
+                expenses.forEachIndexed { index, tx ->
+                    ProjectMovementRow(tx, dateFormat)
+                    if (index < expenses.lastIndex) androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
             }
         }
         Spacer(Modifier.height(100.dp))
@@ -524,7 +490,114 @@ private fun ProjectDetailPanel(
 }
 
 @Composable
-private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?) {
+private fun ProjectIdentityCard(project: ProjectSummary) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = LuminaTokens.ShapeHero,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(
+                if (project.isClosed) "DOSSIER CLÔTURÉ" else projectKindLabel(project.kind).uppercase(Locale.FRANCE),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(5.dp))
+            Text(project.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+            if (project.description.isNotBlank()) {
+                Spacer(Modifier.height(4.dp))
+                Text(project.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectFinanceCard(project: ProjectSummary, event: Boolean, modifier: Modifier = Modifier) {
+    GroupedCard(
+        modifier = modifier,
+        title = if (event) "Finances de l'événement" else "Situation financière",
+        testTag = if (event) "event_finance_card" else "project_finance_card"
+    ) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            AmountBlock(if (event) "Entrées" else "Dons collectés", project.collectedCents, IncomeGreen)
+            AmountBlock(if (event) "Sorties" else "Dépenses", project.spentCents, ExpenseRed)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Disponible : ${CurrencyFormatter.format(project.balanceCents)}",
+            fontWeight = FontWeight.ExtraBold,
+            style = MaterialTheme.typography.titleMedium
+        )
+        if (project.targetCents > 0L) {
+            Spacer(Modifier.height(10.dp))
+            LinearProgressIndicator(
+                progress = {
+                    if (event) (project.spentCents.toDouble() / project.targetCents.toDouble()).toFloat().coerceIn(0f, 1f)
+                    else project.progress
+                },
+                modifier = Modifier.fillMaxWidth().height(9.dp).clip(LuminaTokens.ShapePill),
+                color = if (event) ExpenseRed else MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Spacer(Modifier.height(5.dp))
+            if (event) {
+                val remaining = (project.targetCents - project.spentCents).coerceAtLeast(0L)
+                Text("Budget défini : ${CurrencyFormatter.format(project.targetCents)}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Dépensé ${CurrencyFormatter.format(project.spentCents)} · reste ${CurrencyFormatter.format(remaining)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    "Objectif ${CurrencyFormatter.format(project.targetCents)} · ${(project.progress * 100).toInt()} % collecté",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else if (event) {
+            Text("Aucun budget défini", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun ProjectMovementRow(transaction: TransactionEntity, dateFormat: SimpleDateFormat) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier.size(38.dp).clip(CircleShape)
+                .background(if (transaction.type == TransactionType.INCOME) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(if (transaction.type == TransactionType.INCOME) "+" else "−", fontWeight = FontWeight.Black)
+        }
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(transaction.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text(
+                "${dateFormat.format(Date(transaction.timestamp))} · ${transaction.category}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (transaction.cashRegisterName.isNotBlank()) {
+                Text(transaction.cashRegisterName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Text(
+            CurrencyFormatter.format(transaction.amountCents, withSign = true, isPositive = transaction.type == TransactionType.INCOME),
+            fontWeight = FontWeight.Bold,
+            color = if (transaction.type == TransactionType.INCOME) IncomeGreen else ExpenseRed
+        )
+    }
+}
+
+@Composable
+private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?, modifier: Modifier = Modifier) {
     val initialMonth = remember(startAtMillis, endAtMillis) {
         Calendar.getInstance().apply {
             timeInMillis = startAtMillis ?: System.currentTimeMillis()
@@ -554,7 +627,7 @@ private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?) {
     val startKey = startAtMillis?.let(::projectDateKey)
     val endKey = endAtMillis?.let(::projectDateKey)
 
-    GroupedCard(title = "Calendrier de l'événement", testTag = "project_event_calendar") {
+    GroupedCard(modifier = modifier, title = "Calendrier de l'événement", testTag = "project_event_calendar") {
         Text(rangeLabel, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Row(
@@ -671,10 +744,16 @@ private fun EventActionsCard(
     onActionsChanged: (String) -> Unit
 ) {
     var newActionTitle by remember(projectId) { mutableStateOf("") }
+    var newSubtaskTitle by remember(projectId) { mutableStateOf("") }
+    var subtaskParentId by remember(projectId) { mutableStateOf<String?>(null) }
     val actions = remember(actionItemsJson) { decodeProjectActionItems(actionItemsJson) }
-    GroupedCard(title = "Actions à mener", testTag = "project_action_items") {
+    val allItems = actions.flatMap { listOf(it) + it.subTasks }
+    val pendingCount = allItems.count { !it.isDone }
+
+    GroupedCard(title = "Tâches et sous-tâches", testTag = "project_action_items") {
         Text(
-            if (actions.isEmpty()) "Ajoutez des tâches et cochez-les au fur et à mesure." else "${actions.count { !it.isDone }} action(s) restante(s) sur ${actions.size}",
+            if (actions.isEmpty()) "Ajoutez des tâches et cochez-les au fur et à mesure. Chaque tâche peut contenir des sous-tâches."
+            else "$pendingCount tâche(s) restante(s) sur ${allItems.size}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -686,9 +765,7 @@ private fun EventActionsCard(
                 androidx.compose.material3.Checkbox(
                     checked = action.isDone,
                     onCheckedChange = { checked ->
-                        onActionsChanged(encodeProjectActionItems(actions.map {
-                            if (it.id == action.id) it.copy(isDone = checked) else it
-                        }))
+                        onActionsChanged(encodeProjectActionItems(updateProjectActionItems(actions, action.id) { it.copy(isDone = checked) }))
                     }
                 )
                 Text(
@@ -698,13 +775,65 @@ private fun EventActionsCard(
                     color = if (action.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (action.isDone) TextDecoration.LineThrough else TextDecoration.None
                 )
+                TextButton(onClick = {
+                    subtaskParentId = if (subtaskParentId == action.id) null else action.id
+                    newSubtaskTitle = ""
+                }) { Text("+ sous-tâche") }
+            }
+            action.subTasks.forEach { subtask ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 26.dp).testTag("project_subtask_${subtask.id}"),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = subtask.isDone,
+                        onCheckedChange = { checked ->
+                            onActionsChanged(encodeProjectActionItems(updateProjectActionItems(actions, subtask.id) { it.copy(isDone = checked) }))
+                        }
+                    )
+                    Text(
+                        subtask.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (subtask.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        textDecoration = if (subtask.isDone) TextDecoration.LineThrough else TextDecoration.None
+                    )
+                }
+            }
+            if (subtaskParentId == action.id) {
+                Row(modifier = Modifier.fillMaxWidth().padding(start = 26.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = newSubtaskTitle,
+                        onValueChange = { newSubtaskTitle = it },
+                        label = { Text("Nouvelle sous-tâche") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f).testTag("new_project_subtask_field")
+                    )
+                    IconButton(
+                        onClick = {
+                            val cleanTitle = newSubtaskTitle.trim()
+                            if (cleanTitle.isNotEmpty()) {
+                                val updated = actions.map { item ->
+                                    if (item.id == action.id) item.copy(subTasks = item.subTasks + ProjectActionItem(title = cleanTitle)) else item
+                                }
+                                onActionsChanged(encodeProjectActionItems(updated))
+                                newSubtaskTitle = ""
+                                subtaskParentId = null
+                            }
+                        },
+                        enabled = newSubtaskTitle.isNotBlank(),
+                        modifier = Modifier.testTag("add_project_subtask")
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Ajouter la sous-tâche", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = newActionTitle,
                 onValueChange = { newActionTitle = it },
-                label = { Text("Ajouter une action") },
+                label = { Text("Ajouter une tâche") },
                 singleLine = true,
                 modifier = Modifier.weight(1f).testTag("new_project_action_field")
             )
@@ -719,10 +848,19 @@ private fun EventActionsCard(
                 enabled = newActionTitle.isNotBlank(),
                 modifier = Modifier.testTag("add_project_action")
             ) {
-                Icon(Icons.Default.Add, contentDescription = "Ajouter l'action", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.Add, contentDescription = "Ajouter la tâche", tint = MaterialTheme.colorScheme.primary)
             }
         }
     }
+}
+
+private fun updateProjectActionItems(
+    items: List<ProjectActionItem>,
+    targetId: String,
+    update: (ProjectActionItem) -> ProjectActionItem
+): List<ProjectActionItem> = items.map { item ->
+    if (item.id == targetId) update(item)
+    else item.copy(subTasks = updateProjectActionItems(item.subTasks, targetId, update))
 }
 
 private fun projectDateKey(millis: Long): Int = Calendar.getInstance().apply { timeInMillis = millis }
@@ -777,171 +915,204 @@ private fun ProjectDialog(
     onDismiss: () -> Unit,
     onConfirm: (String, String, Long, Boolean, String, Long?, Long?, String) -> Unit
 ) {
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var description by remember { mutableStateOf(initial?.description ?: "") }
-    var targetText by remember {
-        mutableStateOf(if ((initial?.targetCents ?: 0L) > 0L) initial!!.targetCents.toString() else "")
+    var name by remember(initial?.id) { mutableStateOf(initial?.name ?: "") }
+    var description by remember(initial?.id) { mutableStateOf(initial?.description ?: "") }
+    var targetText by remember(initial?.id) {
+        mutableStateOf(initial?.targetCents?.takeIf { it > 0L }?.toString() ?: "")
     }
-    var isClosed by remember { mutableStateOf(initial?.isClosed ?: false) }
-    var kind by remember { mutableStateOf(initial?.kind ?: "PROJECT") }
+    var isClosed by remember(initial?.id) { mutableStateOf(initial?.isClosed ?: false) }
+    var kind by remember(initial?.id) { mutableStateOf(initial?.kind ?: "PROJECT") }
     var kindMenuExpanded by remember { mutableStateOf(false) }
     var startAtMillis by remember(initial?.id) { mutableStateOf(initial?.startAtMillis) }
     var endAtMillis by remember(initial?.id) { mutableStateOf(initial?.endAtMillis) }
-    var showDateRangePicker by remember { mutableStateOf(false) }
+    var showDateRangePicker by remember(initial?.id) { mutableStateOf(false) }
     var actionText by remember(initial?.id) {
         mutableStateOf(decodeProjectActionItems(initial?.actionItemsJson ?: "[]").joinToString("\n") { it.title })
     }
     val projectDateFormat = remember { SimpleDateFormat("dd MMM yyyy", Locale.FRANCE) }
 
-    AlertDialog(
+    androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = {
-            Column(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Nom du projet") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().testTag("project_name_field")
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description (optionnel)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Box {
-                    TextButton(onClick = { kindMenuExpanded = true }) {
-                        Text("Type : ${projectKindLabel(kind)}")
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir le type")
-                    }
-                    DropdownMenu(
-                        expanded = kindMenuExpanded,
-                        onDismissRequest = { kindMenuExpanded = false }
-                    ) {
-                        listOf(
-                            "PROJECT" to "Projet",
-                            "CAMPAIGN" to "Campagne",
-                            "EVENT" to "Événement",
-                            "DONATION" to "Collecte / don dédié"
-                        ).forEach { (value, label) ->
-                            DropdownMenuItem(
-                                text = { Text(label) },
-                                onClick = { kind = value; kindMenuExpanded = false }
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                OutlinedTextField(
-                    value = targetText,
-                    onValueChange = { input -> targetText = input.filter { it.isDigit() } },
-                    label = { Text("Objectif de collecte (FCFA, optionnel)") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-                if (kind == "EVENT") {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("DATES DE L'ÉVÉNEMENT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 54.dp)
-                            .clip(RoundedCornerShape(13.dp))
-                            .clickable { showDateRangePicker = true }
-                            .testTag("project_date_range_button"),
-                        shape = RoundedCornerShape(13.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(9.dp))
-                            Text(
-                                text = if (startAtMillis != null && endAtMillis != null) {
-                                    "${projectDateFormat.format(Date(startAtMillis!!))}  –  ${projectDateFormat.format(Date(endAtMillis!!))}"
-                                } else "Choisir une date de début et de fin",
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir une période")
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = actionText,
-                        onValueChange = { actionText = it },
-                        label = { Text("Actions à mener (une par ligne)") },
-                        placeholder = { Text("Ex. Réserver la salle\nPréparer le programme") },
-                        minLines = 2,
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth().testTag("project_actions_field")
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.95f).heightIn(max = 760.dp),
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (showDateRangePicker) "Période de l'événement" else title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
                     )
-                }
-                if (initial != null) {
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        androidx.compose.material3.Checkbox(
-                            checked = isClosed,
-                            onCheckedChange = { isClosed = it }
-                        )
-                        Text("Projet clôturé", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { if (showDateRangePicker) showDateRangePicker = false else onDismiss() }) {
+                        Text(if (showDateRangePicker) "Retour" else "Fermer")
                     }
                 }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    if (name.isNotBlank()) {
-                        val previousActions = decodeProjectActionItems(initial?.actionItemsJson ?: "[]")
-                        val actions = if (kind == "EVENT") {
-                            actionText.lines().mapNotNull { line ->
-                                val taskTitle = line.trim()
-                                if (taskTitle.isBlank()) null else previousActions.firstOrNull {
-                                    it.title.equals(taskTitle, ignoreCase = true)
-                                }?.copy(title = taskTitle) ?: ProjectActionItem(title = taskTitle)
+                Spacer(Modifier.height(8.dp))
+
+                if (showDateRangePicker) {
+                    LuminaDateRangePickerPanel(
+                        initialStartLocalMillis = startAtMillis,
+                        initialEndLocalMillis = endAtMillis,
+                        onCancel = { showDateRangePicker = false },
+                        onRangeSelected = { start, end ->
+                            startAtMillis = start
+                            endAtMillis = end
+                            showDateRangePicker = false
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        label = { Text("Nom du projet") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("project_name_field")
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = description,
+                        onValueChange = { description = it },
+                        label = { Text("Description (optionnel)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Box {
+                        TextButton(onClick = { kindMenuExpanded = true }) {
+                            Text("Type : ${projectKindLabel(kind)}")
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Choisir le type")
+                        }
+                        DropdownMenu(
+                            expanded = kindMenuExpanded,
+                            onDismissRequest = { kindMenuExpanded = false }
+                        ) {
+                            listOf(
+                                "PROJECT" to "Projet",
+                                "CAMPAIGN" to "Campagne",
+                                "EVENT" to "Événement",
+                                "DONATION" to "Collecte / don dédié"
+                            ).forEach { (value, label) ->
+                                DropdownMenuItem(
+                                    text = { Text(label) },
+                                    onClick = { kind = value; kindMenuExpanded = false }
+                                )
                             }
-                        } else emptyList()
-                        onConfirm(
-                            name,
-                            description,
-                            targetText.toLongOrNull() ?: 0L,
-                            isClosed,
-                            kind,
-                            if (kind == "EVENT") startAtMillis else null,
-                            if (kind == "EVENT") endAtMillis else null,
-                            encodeProjectActionItems(actions)
-                        )
+                        }
                     }
-                },
-                enabled = name.isNotBlank()
-            ) { Text("Enregistrer") }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuler") }
-        }
-    )
-    if (showDateRangePicker) {
-        LuminaDateRangePickerDialog(
-            initialStartLocalMillis = startAtMillis,
-            initialEndLocalMillis = endAtMillis,
-            onDismissRequest = { showDateRangePicker = false },
-            onRangeSelected = { start, end ->
-                startAtMillis = start
-                endAtMillis = end
-                showDateRangePicker = false
+                    Spacer(Modifier.height(4.dp))
+                    OutlinedTextField(
+                        value = targetText,
+                        onValueChange = { input -> targetText = input.filter { it.isDigit() } },
+                        label = { Text(if (kind == "EVENT") "Budget prévu (FCFA, optionnel)" else "Objectif de collecte (FCFA, optionnel)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (kind == "EVENT") {
+                        Spacer(Modifier.height(10.dp))
+                        Text("DATES DE L'ÉVÉNEMENT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 56.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable { showDateRangePicker = true }
+                                .testTag("project_date_range_button"),
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Text(
+                                    "Début   ${startAtMillis?.let { projectDateFormat.format(Date(it)) } ?: "À définir"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    "Fin       ${endAtMillis?.let { projectDateFormat.format(Date(it)) } ?: "À définir"}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        if (initial == null) {
+                            OutlinedTextField(
+                                value = actionText,
+                                onValueChange = { actionText = it },
+                                label = { Text("Premières tâches (une par ligne)") },
+                                placeholder = { Text("Ex. Réserver la salle\nPréparer le programme") },
+                                minLines = 2,
+                                maxLines = 4,
+                                modifier = Modifier.fillMaxWidth().testTag("project_actions_field")
+                            )
+                        } else {
+                            Text(
+                                "Les tâches et sous-tâches se gèrent dans la fiche de l'événement.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    if (initial != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.Checkbox(
+                                checked = isClosed,
+                                onCheckedChange = { isClosed = it }
+                            )
+                            Text("Projet clôturé", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = onDismiss) { Text("Annuler") }
+                        TextButton(
+                            onClick = {
+                                if (name.isNotBlank()) {
+                                    val actionItemsJson = when {
+                                        kind != "EVENT" -> "[]"
+                                        initial?.kind == "EVENT" -> encodeProjectActionItems(decodeProjectActionItems(initial.actionItemsJson))
+                                        else -> encodeProjectActionItems(actionText.lines().mapNotNull { line ->
+                                            line.trim().takeIf(String::isNotBlank)?.let { ProjectActionItem(title = it) }
+                                        })
+                                    }
+                                    onConfirm(
+                                        name,
+                                        description,
+                                        targetText.toLongOrNull() ?: 0L,
+                                        isClosed,
+                                        kind,
+                                        if (kind == "EVENT") startAtMillis else null,
+                                        if (kind == "EVENT") endAtMillis else null,
+                                        actionItemsJson
+                                    )
+                                }
+                            },
+                            enabled = name.isNotBlank(),
+                            modifier = Modifier.testTag("save_project_button")
+                        ) { Text("Enregistrer") }
+                    }
+                }
             }
-        )
+        }
     }
 }

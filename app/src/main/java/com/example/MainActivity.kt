@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.Settings
@@ -118,6 +119,7 @@ import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ExportScreen
 import com.example.ui.screens.LoginScreen
 import com.example.ui.screens.MembersScreen
+import com.example.ui.screens.NotificationsScreen
 import com.example.ui.screens.OnboardingScreen
 import com.example.ui.screens.ProjectsScreen
 import androidx.compose.material.icons.filled.Savings
@@ -139,6 +141,7 @@ enum class AppScreen(val title: String) {
     MEMBERS("Membres"),
     PROJECTS("Projets"),
     TIMELINE("Historique"),
+    NOTIFICATIONS("Notifications"),
     EXPORT("Exports"),
     TEAM("Équipe & partage"),
     SETTINGS("Paramètres")
@@ -367,6 +370,9 @@ fun LuminaApp(
         OnboardingScreen(
             initialProfile = uiState.profile,
             onFinish = { profile -> viewModel.completeOnboardingFromScreen(profile) },
+            onOpenExistingProfiles = if (workspaces.any { it.id != activeWorkspace.id }) {
+                { showWorkspacePicker = true }
+            } else null,
             onJoinFromFile = { uri, password, onResult ->
                 viewModel.importOrganizationBackupForNewMember(context, uri, password, onResult)
             }
@@ -595,6 +601,19 @@ fun LuminaApp(
                     )
 
                     NavigationDrawerItem(
+                        label = { Text("Notifications", fontWeight = FontWeight.SemiBold) },
+                        icon = { Icon(Icons.Default.NotificationsNone, contentDescription = null) },
+                        selected = currentScreen == AppScreen.NOTIFICATIONS,
+                        onClick = {
+                            currentScreen = AppScreen.NOTIFICATIONS
+                            scope.launch { drawerState.close() }
+                        },
+                        modifier = Modifier
+                            .padding(NavigationDrawerItemDefaults.ItemPadding)
+                            .testTag("drawer_item_notifications")
+                    )
+
+                    NavigationDrawerItem(
                         label = { Text("Registre des Membres", fontWeight = FontWeight.SemiBold) },
                         icon = { Icon(Icons.Default.Groups, contentDescription = null) },
                         selected = currentScreen == AppScreen.MEMBERS,
@@ -718,6 +737,7 @@ fun LuminaApp(
                                 AppScreen.CAISSES -> "Caisses"
                                 AppScreen.BUDGETS -> "Budgets"
                                 AppScreen.TIMELINE -> "Historique"
+                                AppScreen.NOTIFICATIONS -> "Notifications"
                                 AppScreen.MEMBERS -> "Membres"
                                 AppScreen.PROJECTS -> "Projets"
                                 AppScreen.EXPORT -> "Rapports"
@@ -1029,6 +1049,7 @@ fun LuminaApp(
                         createSignal = if (createTarget == AppScreen.BUDGETS) createSignal else 0,
                         onCreateConsumed = { if (createTarget == AppScreen.BUDGETS) createTarget = null }
                     )
+                    AppScreen.NOTIFICATIONS -> NotificationsScreen()
                     AppScreen.MEMBERS -> MembersScreen(
                         members = uiState.members,
                         onAddMember = { viewModel.addMember(it) },

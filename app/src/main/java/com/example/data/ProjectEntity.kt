@@ -31,7 +31,7 @@ data class ProjectEntity(
     val uid: String = UUID.randomUUID().toString(),
     val name: String,
     val description: String = "",
-    /** Objectif de collecte, 0 si aucun objectif n'est fixé. */
+    /** Collection goal for ordinary projects; event budget for EVENT records; 0 when unset. */
     val targetCents: Long = 0L,
     val isClosed: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
@@ -51,31 +51,38 @@ data class ProjectEntity(
 data class ProjectActionItem(
     val id: String = UUID.randomUUID().toString(),
     val title: String,
-    val isDone: Boolean = false
+    val isDone: Boolean = false,
+    /** Nested checklist items are kept in the same JSON field for backup/sync compatibility. */
+    val subTasks: List<ProjectActionItem> = emptyList()
 )
 
 fun decodeProjectActionItems(json: String): List<ProjectActionItem> = runCatching {
-    val items = org.json.JSONArray(json)
-    (0 until items.length()).mapNotNull { index ->
+    fun parse(items: org.json.JSONArray): List<ProjectActionItem> = (0 until items.length()).mapNotNull { index ->
         val item = items.optJSONObject(index) ?: return@mapNotNull null
         val title = item.optString("title", "").trim()
         if (title.isBlank()) null else ProjectActionItem(
             id = item.optString("id").ifBlank { UUID.randomUUID().toString() },
             title = title,
-            isDone = item.optBoolean("isDone", false)
+            isDone = item.optBoolean("isDone", false),
+            subTasks = parse(item.optJSONArray("subTasks") ?: org.json.JSONArray())
         )
     }
+    parse(org.json.JSONArray(json))
 }.getOrDefault(emptyList())
 
-fun encodeProjectActionItems(items: List<ProjectActionItem>): String = org.json.JSONArray().apply {
-    items.filter { it.title.isNotBlank() }.forEach { item ->
-        put(org.json.JSONObject().apply {
-            put("id", item.id)
-            put("title", item.title.trim())
-            put("isDone", item.isDone)
-        })
+fun encodeProjectActionItems(items: List<ProjectActionItem>): String {
+    fun serialize(entries: List<ProjectActionItem>): org.json.JSONArray = org.json.JSONArray().apply {
+        entries.filter { it.title.isNotBlank() }.forEach { item ->
+            put(org.json.JSONObject().apply {
+                put("id", item.id)
+                put("title", item.title.trim())
+                put("isDone", item.isDone)
+                put("subTasks", serialize(item.subTasks))
+            })
+        }
     }
-}.toString()
+    return serialize(items).toString()
+}
 
 @Dao
 interface ProjectDao {

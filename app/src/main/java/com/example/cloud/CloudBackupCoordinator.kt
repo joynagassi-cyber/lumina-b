@@ -65,15 +65,36 @@ object CloudBackupCoordinator {
                     val link = CloudBackupLocalStore.link(app, workspaceId)
                         ?: return@withWorkspaceLock false
                     if (!link.enabled) return@withWorkspaceLock false
+                    val fingerprint = BackupService.cloudContentFingerprint(app, repository)
+                    if (CloudBackupLocalStore.lastFingerprint(app, workspaceId) == fingerprint) {
+                        CloudBackupLocalStore.setStatus(app, workspaceId, "Sauvegarde cloud à jour.")
+                        return@withWorkspaceLock false
+                    }
+                    if (!CloudBackupLocalStore.claimSyncDay(app, workspaceId)) {
+                        CloudBackupLocalStore.setStatus(
+                            app,
+                            workspaceId,
+                            "Limite de synchronisation atteinte : les transferts sont répartis sur trois jours maximum par période de sept jours."
+                        )
+                        return@withWorkspaceLock false
+                    }
                     publishCurrent(app, repository, SupabaseCloudClient(app), link)
                     true
                 }
                 if (didPublish) {
                     CloudBackupLocalStore.finishProgress(workspaceId, "Sauvegarde cloud terminée")
+                    com.example.notifications.LuminaNotifier.notifySyncProgress(
+                        app,
+                        workspaceId,
+                        100,
+                        "La copie est publiée et vérifiée.",
+                        finished = true
+                    )
                 }
                 didPublish
             } catch (error: Exception) {
                 CloudBackupLocalStore.clearProgress(workspaceId)
+                com.example.notifications.LuminaNotifier.cancelSyncProgress(app, workspaceId)
                 throw error
             }
         }
@@ -187,26 +208,26 @@ object CloudBackupCoordinator {
             return
         }
         CloudBackupLocalStore.beginProgress(repository.workspaceId, "Préparation de la sauvegarde…")
-        CloudBackupLocalStore.setProgress(repository.workspaceId, 8, "Préparation des données et justificatifs…")
+        reportProgress(context, repository.workspaceId, 8, "Préparation des données et justificatifs…")
         val bytes = BackupService.createCloudArchive(context, repository)
         require(bytes.size.toLong() in 1..MAX_CLOUD_BACKUP_BYTES) {
             "La sauvegarde dépasse la limite de stockage cloud."
         }
         val checksum = sha256(bytes)
         val objectPath = "churches/${link.churchId}/${UUID.randomUUID()}.lumina"
-        CloudBackupLocalStore.setProgress(repository.workspaceId, 12, "Envoi de la sauvegarde…")
+        reportProgress(context, repository.workspaceId, 12, "Envoi de la sauvegarde…")
         var lastReportedPercent = 12
         var lastReportedAt = android.os.SystemClock.elapsedRealtime()
         client.uploadObject(objectPath, bytes) { sent, total ->
             val percent = if (total <= 0L) 85 else 12 + ((sent * 73L / total).toInt())
             val now = android.os.SystemClock.elapsedRealtime()
             if (percent >= lastReportedPercent + 1 || sent >= total || now - lastReportedAt >= 120L) {
-                CloudBackupLocalStore.setProgress(repository.workspaceId, percent, "Envoi des données vers l'église…")
+                reportProgress(context, repository.workspaceId, percent, "Envoi des données vers l'église…")
                 lastReportedPercent = percent
                 lastReportedAt = now
             }
         }
-        CloudBackupLocalStore.setProgress(repository.workspaceId, 92, "Validation de la copie dans le cloud…")
+        reportProgress(context, repository.workspaceId, 92, "Validation de la copie dans le cloud…")
         val latestLocalLink = CloudBackupLocalStore.link(context, repository.workspaceId)
         if (latestLocalLink == null || !latestLocalLink.enabled || latestLocalLink.generation != link.generation) {
             throw IllegalStateException("La liaison cloud a changé; la publication a été annulée pour protéger les données.")
@@ -222,6 +243,11 @@ object CloudBackupCoordinator {
         CloudBackupLocalStore.setLink(context, repository.workspaceId, link.churchId, published.generation, enabled = true)
         CloudBackupLocalStore.setLastFingerprint(context, repository.workspaceId, fingerprint)
         CloudBackupLocalStore.setStatus(context, repository.workspaceId, "Nouvelle sauvegarde cloud publiée (version ${published.generation}).")
+    }
+
+    private fun reportProgress(context: Context, workspaceId: String, percent: Int, message: String) {
+        CloudBackupLocalStore.setProgress(workspaceId, percent, message)
+        com.example.notifications.LuminaNotifier.notifySyncProgress(context, workspaceId, percent, message)
     }
 
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")

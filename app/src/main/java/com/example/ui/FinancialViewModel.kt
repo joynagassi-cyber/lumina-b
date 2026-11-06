@@ -138,9 +138,11 @@ data class ProjectSummary(
     val actionItemsJson: String = "[]"
 ) {
     val balanceCents: Long get() = collectedCents - spentCents
+    /** Event targets are spending budgets; other project targets remain collection goals. */
     val progress: Float
         get() = if (targetCents > 0L) {
-            ((collectedCents.toDouble() / targetCents.toDouble()).toFloat()).coerceIn(0f, 1f)
+            val numerator = if (kind == "EVENT") spentCents else collectedCents
+            ((numerator.toDouble() / targetCents.toDouble()).toFloat()).coerceIn(0f, 1f)
         } else {
             0f
         }

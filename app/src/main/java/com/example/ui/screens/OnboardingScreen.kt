@@ -70,6 +70,7 @@ import androidx.compose.foundation.Image
 import com.example.data.ChurchProfileEntity
 import com.example.ui.components.LuminaFeatureChapters
 import com.example.ui.components.LuminaFeatureTour
+import com.example.ui.components.LuminaOnboardingWelcome
 import com.example.ui.designsystem.LuminaBranding
 import com.example.ui.designsystem.LuminaBrandMark
 import com.example.ui.theme.AccentPalettes
@@ -92,12 +93,13 @@ fun OnboardingScreen(
     modifier: Modifier = Modifier,
     startAtStep: Int = 0,
     finishLabel: String = "Ouvrir mon dossier",
+    onOpenExistingProfiles: (() -> Unit)? = null,
     onJoinFromFile: (Uri, String, (Result<BackupSnapshot>) -> Unit) -> Unit = { _, _, result ->
         result(Result.failure(IllegalStateException("Import de fichier indisponible")))
     }
 ) {
     val context = LocalContext.current
-    var introPage by remember { mutableIntStateOf(if (startAtStep > 0) LuminaFeatureChapters.size else 0) }
+    var introPage by remember { mutableIntStateOf(if (startAtStep > 0) LuminaFeatureChapters.size else -1) }
     var step by remember { mutableIntStateOf(startAtStep.coerceIn(0, 5)) }
     var selectedArchiveUri by remember { mutableStateOf<Uri?>(null) }
     var showJoinDialog by remember { mutableStateOf(false) }
@@ -150,8 +152,14 @@ fun OnboardingScreen(
             .background(MaterialTheme.colorScheme.background)
             .testTag("onboarding_screen")
     ) {
-        if (introPage < LuminaFeatureChapters.size) {
-            LuminaFeatureTour(
+        when {
+            introPage == -1 -> LuminaOnboardingWelcome(
+                onDiscover = { introPage = 0 },
+                onConfigure = { introPage = LuminaFeatureChapters.size },
+                onJoinFromFile = { archivePicker.launch(arrayOf("*/*")) },
+                onOpenExistingProfiles = onOpenExistingProfiles
+            )
+            introPage < LuminaFeatureChapters.size -> LuminaFeatureTour(
                 page = introPage,
                 onPrevious = { introPage = (introPage - 1).coerceAtLeast(0) },
                 onNext = {
@@ -160,10 +168,11 @@ fun OnboardingScreen(
                 },
                 onSkip = { introPage = LuminaFeatureChapters.size },
                 onJoinFromFile = { archivePicker.launch(arrayOf("*/*")) },
+                onOpenExistingProfiles = onOpenExistingProfiles,
                 finalActionLabel = "Configurer mon église",
                 closeLabel = "Passer"
             )
-        } else {
+            else -> {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -337,6 +346,7 @@ fun OnboardingScreen(
                 )
             }
         }
+            }
         }
 
         if (showJoinDialog) {
@@ -470,7 +480,7 @@ private fun WelcomeStep(accentColor: Color) {
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.testTag("lumina_slogan")
         )
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(18.dp))
         WelcomePoint(Icons.Default.Payments, "Trésorerie par caisse", "Chaque franc est rattaché à une caisse, avec virements traçables.")
         WelcomePoint(Icons.Default.PieChart, "Budgets maîtrisés", "Plafonds par poste et alertes avant dépassement.")
         WelcomePoint(Icons.Default.VerifiedUser, "Bilans présentables", "Rapports structurés avec l'identité et le logo de votre église.")

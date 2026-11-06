@@ -24,6 +24,7 @@ object LuminaNotifier {
     private const val CHANNEL_NAME = "Activité financière"
     private const val CHANNEL_DESCRIPTION =
         "Confirmations d'opérations, virements et alertes de budget"
+    const val SYNC_CHANNEL_ID = "lumina_synchronisation"
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -40,6 +41,53 @@ object LuminaNotifier {
         manager.createNotificationChannel(channel)
     }
 
+    private fun ensureSyncChannel(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (manager.getNotificationChannel(SYNC_CHANNEL_ID) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(SYNC_CHANNEL_ID, "Synchronisation des sauvegardes", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Progression des transferts de sauvegarde cloud"
+                setShowBadge(false)
+            }
+        )
+    }
+
+    fun notifySyncProgress(context: Context, workspaceId: String, percent: Int, message: String, finished: Boolean = false) {
+        ensureSyncChannel(context)
+        if (!canPost(context)) return
+        val notificationId = (workspaceId.hashCode() and 0x3fffffff) or 0x40000000
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val pending = PendingIntent.getActivity(
+            context,
+            notificationId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val percentSafe = percent.coerceIn(0, 100)
+        val title = if (finished) "Sauvegarde synchronisée" else "Synchronisation cloud · $percentSafe %"
+        val notification = NotificationCompat.Builder(context, SYNC_CHANNEL_ID)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(message))
+            .setProgress(if (finished) 0 else 100, if (finished) 0 else percentSafe, false)
+            .setOngoing(!finished)
+            .setAutoCancel(finished)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setContentIntent(pending)
+            .build()
+        runCatching { NotificationManagerCompat.from(context).notify(notificationId, notification) }
+    }
+
+    fun cancelSyncProgress(context: Context, workspaceId: String) {
+        val notificationId = (workspaceId.hashCode() and 0x3fffffff) or 0x40000000
+        NotificationManagerCompat.from(context).cancel(notificationId)
+    }
+
     fun canPost(context: Context): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             return ContextCompat.checkSelfPermission(
@@ -51,6 +99,7 @@ object LuminaNotifier {
     }
 
     fun notify(context: Context, title: String, body: String, id: Int = System.currentTimeMillis().toInt()) {
+        NotificationInboxStore.add(context, title, body)
         ensureChannel(context)
         if (!canPost(context)) return
 

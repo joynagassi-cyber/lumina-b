@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -48,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.designsystem.LuminaBrandMark
 
 /** Les mêmes six chapitres alimentent l'accueil initial et le guide des paramètres. */
 data class LuminaFeatureChapter(
@@ -103,6 +105,94 @@ val LuminaFeatureChapters = listOf(
     )
 )
 
+/** First-run welcome page, kept separate from both the tour and church setup wizard. */
+@Composable
+fun LuminaOnboardingWelcome(
+    onDiscover: () -> Unit,
+    onConfigure: () -> Unit,
+    onJoinFromFile: (() -> Unit)?,
+    onOpenExistingProfiles: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(Modifier.height(12.dp))
+        LuminaBrandMark(modifier = Modifier.size(88.dp))
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Bienvenue sur Lumina",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.ExtraBold,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Une gestion claire et sereine pour accompagner la vie de votre église.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+        Spacer(Modifier.height(18.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.78f)
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 18.dp)) {
+                Text(
+                    "« Que tout se fasse avec bienséance et avec ordre. »",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "1 Corinthiens 14:40",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Button(
+            onClick = onDiscover,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag("welcome_discover_lumina"),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text("Découvrir Lumina", fontWeight = FontWeight.Bold)
+        }
+        TextButton(onClick = onConfigure, modifier = Modifier.testTag("welcome_configure_church")) {
+            Text("Commencer la configuration")
+        }
+        if (onOpenExistingProfiles != null) {
+            TextButton(onClick = onOpenExistingProfiles, modifier = Modifier.testTag("welcome_existing_profile")) {
+                Icon(Icons.Default.Groups, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("Accéder à un profil existant")
+            }
+        }
+        if (onJoinFromFile != null) {
+            TextButton(onClick = onJoinFromFile, modifier = Modifier.testTag("welcome_join_from_file")) {
+                Icon(Icons.Default.Description, contentDescription = null)
+                Spacer(Modifier.width(7.dp))
+                Text("Importer un fichier Lumina")
+            }
+        }
+        Spacer(Modifier.height(16.dp))
+    }
+}
+
 /**
  * Visite guidée unique, réutilisée avant la configuration et dans Paramètres.
  * Les illustrations sont entièrement vectorielles (ImageVector + formes Compose).
@@ -114,6 +204,7 @@ fun LuminaFeatureTour(
     onPrevious: () -> Unit,
     onSkip: () -> Unit,
     onJoinFromFile: (() -> Unit)? = null,
+    onOpenExistingProfiles: (() -> Unit)? = null,
     finalActionLabel: String = "Terminer",
     closeLabel: String = "Passer",
     modifier: Modifier = Modifier
@@ -240,6 +331,14 @@ fun LuminaFeatureTour(
                     Icon(Icons.Default.Description, contentDescription = null)
                     Spacer(Modifier.width(7.dp))
                     Text("J'ai déjà un fichier Lumina")
+                }
+            }
+            if (safePage == 0 && onOpenExistingProfiles != null) {
+                Spacer(Modifier.height(2.dp))
+                TextButton(onClick = onOpenExistingProfiles, modifier = Modifier.testTag("open_existing_profiles")) {
+                    Icon(Icons.Default.Groups, contentDescription = null)
+                    Spacer(Modifier.width(7.dp))
+                    Text("Accéder à un profil existant")
                 }
             }
             Spacer(Modifier.height(12.dp))
