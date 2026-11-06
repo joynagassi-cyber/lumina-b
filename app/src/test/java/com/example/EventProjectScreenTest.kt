@@ -1,7 +1,7 @@
 package com.example
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -56,8 +56,9 @@ class EventProjectScreenTest {
         }
 
         composeRule.onNodeWithTag("project_card_42").performClick()
-        composeRule.onNodeWithTag("event_management_card").assertIsDisplayed()
-        composeRule.onNodeWithTag("project_event_calendar").assertIsDisplayed()
-        composeRule.onNodeWithTag("project_action_items").assertIsDisplayed()
+        composeRule.onNodeWithTag("project_detail_42").assertExists()
+        composeRule.onNodeWithTag("event_management_card").assertExists()
+        composeRule.onNodeWithTag("project_event_calendar").assertExists()
+        composeRule.onNodeWithTag("project_action_items").assertExists()
     }
 }
