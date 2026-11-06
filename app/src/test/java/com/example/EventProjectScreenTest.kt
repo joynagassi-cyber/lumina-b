@@ -1,9 +1,9 @@
 package com.example
 
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.example.ui.ProjectSummary
@@ -56,11 +56,12 @@ class EventProjectScreenTest {
             }
         }
 
-        composeRule.onNodeWithTag("project_card_42").performScrollTo().performClick()
+        composeRule.onAllNodesWithTag("project_card_42").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("project_card_42")[0].performScrollTo().performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithTag("project_detail_42").assertIsDisplayed()
-        composeRule.onNodeWithTag("event_management_card").assertIsDisplayed()
-        composeRule.onNodeWithTag("project_event_calendar").assertIsDisplayed()
-        composeRule.onNodeWithTag("project_action_items").assertIsDisplayed()
+        composeRule.onAllNodesWithTag("project_detail_42").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("event_management_card").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("project_event_calendar").assertCountEquals(1)
+        composeRule.onAllNodesWithTag("project_action_items").assertCountEquals(1)
     }
 }
