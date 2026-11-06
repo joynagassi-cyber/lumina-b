@@ -686,7 +686,7 @@ private fun ProjectEventCalendar(startAtMillis: Long?, endAtMillis: Long?, modif
                 Icon(Icons.Default.ArrowBack, contentDescription = "Mois précédent")
             }
             Text(
-                monthFormatter.format(firstDayCalendar).replaceFirstChar { it.uppercase(Locale.FRANCE) },
+                monthFormatter.format(firstDayCalendar.time).replaceFirstChar { it.uppercase(Locale.FRANCE) },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
