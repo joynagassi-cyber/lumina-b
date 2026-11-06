@@ -106,8 +106,7 @@ fun ProjectsScreen(
     var editing by remember { mutableStateOf<ProjectEntity?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<ProjectSummary?>(null) }
-    var selectedProjectId by remember { mutableStateOf<Long?>(null) }
-    val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
+    var selectedProject by remember { mutableStateOf<ProjectSummary?>(null) }
 
     LaunchedEffect(createSignal) {
         if (createSignal > 0) {
@@ -117,14 +116,15 @@ fun ProjectsScreen(
     }
 
     if (selectedProject != null) {
+        val project = requireNotNull(selectedProject)
         ProjectDetailPanel(
-            project = selectedProject,
+            project = project,
             transactions = transactions.filter {
-                it.projectId == selectedProject.id && !it.isDeleted && !it.isNeutralised
+                it.projectId == project.id && !it.isDeleted && !it.isNeutralised
             }.sortedByDescending { it.timestamp },
-            onBack = { selectedProjectId = null },
-            onUpdateActions = { actionItemsJson -> onUpdateProjectActions(selectedProject.toEntity(), actionItemsJson) },
-            onEdit = { editing = selectedProject.toEntity() }
+            onBack = { selectedProject = null },
+            onUpdateActions = { actionItemsJson -> onUpdateProjectActions(project.toEntity(), actionItemsJson) },
+            onEdit = { editing = project.toEntity() }
         )
     } else {
     Column(
@@ -233,7 +233,7 @@ fun ProjectsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
-                        .clickable { selectedProjectId = project.id }
+                        .clickable { selectedProject = project }
                         .testTag("project_card_${project.id}"),
                     shape = LuminaTokens.ShapeCard,
                     colors = CardDefaults.cardColors(
