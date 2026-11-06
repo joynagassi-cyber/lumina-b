@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
@@ -403,7 +404,7 @@ private fun ProjectDetailPanel(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(remember(project.id) { ScrollState(0) })
             .padding(horizontal = LuminaTokens.SpacingDefault, vertical = LuminaTokens.SpacingMedium)
             .testTag("project_detail_${project.id}")
     ) {
